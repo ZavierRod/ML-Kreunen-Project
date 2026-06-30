@@ -1,0 +1,10 @@
+test_name,status,details
+2015_2025_two_factor_row_count,PASS,"expected 10, got 10"
+2015_2025_three_factor_row_count,PASS,"expected 10, got 10"
+2010_2025_two_factor_row_count,PASS,"expected 15, got 15"
+2010_2025_three_factor_row_count,PASS,"expected 15, got 15"
+2001_2025_two_factor_row_count,PASS,"expected 24, got 24"
+2001_2025_three_factor_row_count,PASS,"expected 24, got 24"
+exact_two_factor_tie_out,PASS,max gap 0.000000000000
+three_factor_ranking_complete,PASS,rank columns contain three distinct factors
+rolling_window_has_expected_periods,PASS,"expected 5, got 5"

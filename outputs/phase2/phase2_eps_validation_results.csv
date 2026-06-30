@@ -1,0 +1,9 @@
+test_name,status,details
+2015_2025_annual_row_count,PASS,"expected 11, got 11"
+2015_2025_horizon_row_count,PASS,"expected 10, got 10"
+2010_2025_annual_row_count,PASS,"expected 16, got 16"
+2010_2025_horizon_row_count,PASS,"expected 15, got 15"
+2001_2025_annual_row_count,PASS,"expected 25, got 25"
+2001_2025_horizon_row_count,PASS,"expected 24, got 24"
+phase1_formula_tie_out_within_phase2,PASS,max difference 0.000000000000
+all_horizon_values_are_finite,PASS,checked all generated horizon rows

@@ -1,0 +1,17 @@
+test_name,status,details
+2015_2025_annual_row_count,PASS,"expected 11, got 11"
+2015_2025_two_factor_row_count,PASS,"expected 10, got 10"
+2015_2025_three_factor_row_count,PASS,"expected 10, got 10"
+2010_2025_annual_row_count,PASS,"expected 16, got 16"
+2010_2025_two_factor_row_count,PASS,"expected 15, got 15"
+2010_2025_three_factor_row_count,PASS,"expected 15, got 15"
+2001_2025_annual_row_count,PASS,"expected 25, got 25"
+2001_2025_two_factor_row_count,PASS,"expected 24, got 24"
+2001_2025_three_factor_row_count,PASS,"expected 24, got 24"
+annual_fcf_identity_tie_out,PASS,max gap 0.000000000000
+exact_two_factor_tie_out,PASS,max gap 0.000000000000
+exact_three_factor_tie_out,PASS,max gap 0.000000000000
+all_phase7_inputs_positive,PASS,"checked revenue, fcf_margin, shares, and fcf_per_share"
+share_count_directionality_check,PASS,buybacks map to positive share-count contribution
+fcf_abs_share_weights_sum_to_one,PASS,max deviation 0.000000000000
+combined_panel_join_complete,PASS,"expected 24, got 24"

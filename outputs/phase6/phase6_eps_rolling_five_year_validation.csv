@@ -1,0 +1,5 @@
+test_name,status,details
+slot_count,PASS,"expected 20, got 20"
+slot_span_is_five_years,PASS,all slots span 5 years
+cagr_recomputes_from_endpoints,PASS,max gap 0.00e+00
+eps_cagr_spot_check,PASS,max gap 0.00e+00

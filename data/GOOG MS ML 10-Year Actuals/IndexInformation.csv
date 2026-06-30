@@ -1,0 +1,44 @@
+﻿MacroVersion,6.10
+PublishDate,02/05/26 01:28
+Discipline,Research
+ResearchTopic,Company
+DocType,Model
+SubjectCode,
+Description,Alphabet Inc.
+KeepVersions,All
+Rating,Overweight / Attractive
+CurrYearTotalRevenue*,
+CurrYearEPS*,
+NextYearTotalRevenue*,
+NextYearEPS*,
+FollowingYearTotalRevenue*,
+FollowingYearEPS*,
+5YearGrowthRate,
+UpdateReason,Regular Update
+Authors,"MSA32LVJ, MSA10954"
+Tickers,GOOGL.O
+CUSIP,02079K305
+RIC,GOOGL.O
+SEDOL,BYVY8G0
+Current Stock Price,326.02
+Currency,USD
+PathName,L:\TECH\INTERNET\MODELS\GOOGL_model.xlsm
+Distribution,0
+Deleted,NO
+EmailAlert,YES
+CurrQtrEPS,
+CYEnd,
+CQEnd,
+CurrYearTotalRevenueActual*,
+NextYearTotalRevenueActual*,
+FollowingYearTotalRevenueActual*,
+Multiplier,1000000
+TemplateRegion,NorthAmerica
+ObjectType,excel
+LanguageCode,en-US
+SubmitterUserId,javerin
+IndustryId,1500005604
+TickerRegion,1
+AdditionalInstructions,
+*Estimated,"Publish with Alphabet note titled ""What Does This Revenue and Capex Acceleration Mean?"""
+OwnerTeam,I1500001153

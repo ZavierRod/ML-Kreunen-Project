@@ -1,0 +1,7 @@
+overall_rank,factor,mean_abs_pct_change,mean_weight,mean_pct_change,positive_periods,negative_periods,periods
+1,EPS,0.970376,0.245106,0.918027,21,3,24
+2,NetCash,0.854002,0.181062,0.836202,21,3,24
+3,FCF,0.661331,0.226764,0.618195,19,5,24
+4,Revenue,0.556757,0.193205,0.556757,24,0,24
+5,Net Margin,0.343853,0.139041,0.159767,14,10,24
+6,Shares,0.033646,0.014823,0.02201,16,8,24

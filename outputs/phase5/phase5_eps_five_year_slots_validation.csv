@@ -1,0 +1,7 @@
+test_name,status,details
+two_factor_log_bridge_tie_out,PASS,max gap 0.000000000000
+three_factor_log_bridge_tie_out,PASS,max gap 0.000000000000
+slot_breakdown_matches_slot_total,PASS,max gap 0.000000000000
+2015_2025_slot_count,PASS,"expected 2, got 2"
+2010_2025_slot_count,PASS,"expected 3, got 3"
+2001_2025_slot_count,PASS,"expected 5, got 5"
