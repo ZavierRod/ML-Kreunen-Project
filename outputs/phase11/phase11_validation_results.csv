@@ -1,0 +1,15 @@
+test_name,status,details
+levels_loaded,PASS,loaded 25 years in 2001-2025
+effective_period_count,PASS,"expected 24, got 24"
+first_period_is_2001_2002,PASS,first period 2001-2002
+recent5_period_count,PASS,"expected 5, got 5"
+eff_shares_identity,PASS,max |eff.Shares - base*(1+dRevenue)| = 0.00e+00
+eff_net_margin_identity,PASS,max |eff.NetMargin - base*(1+dRevPerShare)| = 0.00e+00
+all_values_finite,PASS,checked every populated metric in every period
+combined_full_row_count,PASS,"expected 9, got 9"
+combined_recent_row_count,PASS,"expected 9, got 9"
+combined_full_non_price_periods_aligned,PASS,"expected all non-Price rows = 24 periods, got [24]"
+combined_full_price_periods,PASS,"expected Price = 21 periods, got [21]"
+combined_recent_non_price_periods_aligned,PASS,"expected all non-Price rows = 5 periods, got [5]"
+combined_recent_price_periods,PASS,"expected Price = 5 periods, got [5]"
+shares_series_consistent,PASS,Shares mean_abs from Phase 9 levels vs panel differ by 0.00e+00

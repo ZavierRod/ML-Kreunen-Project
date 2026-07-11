@@ -1,0 +1,3 @@
+overall_rank,metric,mean_abs,mean,positive_periods,negative_periods,periods
+1,eff.NetMargin,0.750608,0.427898,14,10,24
+2,eff.Shares,0.080288,-0.066627,8,16,24

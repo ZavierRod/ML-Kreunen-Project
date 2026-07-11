@@ -1,0 +1,10 @@
+test_name,status,details
+2015_2025_period_count,PASS,"expected 10, got 10"
+2010_2025_period_count,PASS,"expected 15, got 15"
+2001_2025_period_count,PASS,"expected 24, got 24"
+weights_sum_to_one,PASS,max deviation 0.000000000000
+all_pct_changes_finite,PASS,checked every populated factor in every period
+price_starts_2004,PASS,"expected 21 price periods, got 21"
+first_price_period_is_2004_2005,PASS,first price period 2004-2005
+netcash_matches_sheet_ncash_per_share,PASS,max abs gap 0.000000 over 12 years
+shares_split_consistent,PASS,max adjacent share ratio 1.181 (split break gone if < 5)

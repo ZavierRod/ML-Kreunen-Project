@@ -1,0 +1,11 @@
+overall_rank,metric,type,mean_abs,mean,positive_periods,negative_periods,periods
+1,EPS,factor,0.455637,0.404248,19,2,21
+2,EV,derived-level,0.423459,0.305868,15,6,21
+3,Price,factor,0.393783,0.293428,16,5,21
+4,FCF,factor,0.355317,0.306019,16,5,21
+5,C-Return,derived-delta,0.346539,0.29358,15,6,21
+6,NetCash,factor,0.313116,0.292773,18,3,21
+7,Revenue,factor,0.274564,0.274564,21,0,21
+8,Net Margin,factor,0.239443,0.094026,12,9,21
+9,eff.dCash,derived-delta,0.042719,0.01244,12,9,21
+10,Shares,factor,0.019054,0.005756,13,8,21

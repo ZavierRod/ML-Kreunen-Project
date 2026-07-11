@@ -1,0 +1,13 @@
+test_name,status,details
+levels_loaded,PASS,loaded 22 years in 2004-2025
+ev_period_count,PASS,"expected 21, got 21"
+first_period_is_2004_2005,PASS,first period 2004-2005
+recent5_period_count,PASS,"expected 5, got 5"
+eff_delta_cash_identity,PASS,max |eff - (dEV - dPrice)| = 0.00e+00
+c_return_identity,PASS,max |C-Return - (dFCF - eff)| = 0.00e+00
+all_values_finite,PASS,checked every populated metric in every period
+combined_full_row_count,PASS,"expected 10, got 10"
+combined_recent_row_count,PASS,"expected 10, got 10"
+combined_full_periods_aligned,PASS,"expected all rows = 21 periods, got [21]"
+combined_recent_periods_aligned,PASS,"expected all rows = 5 periods, got [5]"
+price_series_consistent,PASS,Price mean_abs from Phase 9 levels vs EV panel differ by 0.00e+00

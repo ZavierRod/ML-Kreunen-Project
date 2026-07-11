@@ -1,0 +1,5 @@
+overall_rank,metric,mean_abs,mean,positive_periods,negative_periods,periods
+1,EV_pct_change,0.571768,0.408418,4,1,5
+2,FCF_pct_change,0.176123,0.134327,4,1,5
+3,c_return,0.138211,0.098637,3,2,5
+4,eff_delta_cash,0.044355,0.03569,4,1,5
