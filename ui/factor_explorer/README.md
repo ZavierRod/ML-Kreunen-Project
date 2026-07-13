@@ -19,6 +19,40 @@ If your active Python environment already has `requirements.txt` installed and
 streamlit run ui/factor_explorer/app.py
 ```
 
+## Ask the Data
+
+The app includes an optional OpenAI-backed analyst panel. It answers questions
+from the current Streamlit state: selected metrics, date window, ranking table,
+period panel, metric definitions, validation results, and the generated team
+brief.
+
+Install dependencies first:
+
+```bash
+pip install -r requirements.txt
+```
+
+Then provide an API key without committing it:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+You can optionally override the default model:
+
+```bash
+export OPENAI_MODEL="gpt-4o-mini"
+```
+
+For Streamlit secrets, create `.streamlit/secrets.toml` locally:
+
+```toml
+OPENAI_API_KEY = "sk-..."
+OPENAI_MODEL = "gpt-4o-mini"
+```
+
+Do not commit `.streamlit/secrets.toml`.
+
 ## What It Loads
 
 - Standalone factor levels from `outputs/phase9/phase9_factor_levels.csv`

@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 
 try:
-    from . import charts, engine
+    from . import charts, engine, llm
     from .metrics import (
         ALL_METRICS,
         METRIC_CATALOG,
@@ -23,6 +23,7 @@ except ImportError:  # pragma: no cover - Streamlit runs this file directly.
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import charts  # type: ignore
     import engine  # type: ignore
+    import llm  # type: ignore
     from metrics import (  # type: ignore
         ALL_METRICS,
         METRIC_CATALOG,
@@ -75,6 +76,20 @@ st.markdown(
         line-height: 1.35;
         margin-top: 0.45rem;
     }
+    .analyst-answer {
+        border: 1px solid rgba(49, 51, 63, 0.14);
+        border-radius: 8px;
+        padding: 1rem;
+        background: #ffffff;
+        margin-top: 0.75rem;
+    }
+    .analyst-point {
+        border-left: 3px solid #2563eb;
+        padding: 0.55rem 0.75rem;
+        margin: 0.5rem 0;
+        background: #f8fafc;
+    }
+    .analyst-point strong {color: #111827;}
     @media (max-width: 1100px) {
         .factor-insight-grid {grid-template-columns: repeat(2, minmax(0, 1fr));}
     }
@@ -380,6 +395,140 @@ def format_comparison_table(comparison: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def render_analyst_answer(answer: dict[str, object]) -> None:
+    st.markdown(
+        f"""
+        <div class="analyst-answer">
+          {html.escape(str(answer.get("answer", "")))}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    supporting_points = answer.get("supporting_points", [])
+    if isinstance(supporting_points, list) and supporting_points:
+        st.markdown("**Supporting rows**")
+        for point in supporting_points:
+            if not isinstance(point, dict):
+                continue
+            metric = html.escape(str(point.get("metric", "")))
+            period = html.escape(str(point.get("period", "")))
+            value = html.escape(str(point.get("value", "")))
+            explanation = html.escape(str(point.get("explanation", "")))
+            st.markdown(
+                f"""
+                <div class="analyst-point">
+                  <strong>{metric}</strong> <span>{period}</span> <code>{value}</code><br>
+                  {explanation}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    caveats = answer.get("caveats", [])
+    if isinstance(caveats, list) and caveats:
+        st.markdown("**Caveats**")
+        for caveat in caveats:
+            st.caption(str(caveat))
+
+    followups = answer.get("suggested_followups", [])
+    if isinstance(followups, list) and followups:
+        st.markdown("**Suggested follow-ups**")
+        for followup in followups:
+            st.caption(str(followup))
+
+
+def render_ask_data_panel(
+    *,
+    panel: pd.DataFrame,
+    ranking: pd.DataFrame,
+    selected_metrics: list[str],
+    start_year: int,
+    end_year: int,
+    conflicts: list[tuple[str, str]],
+    weight_mode: bool,
+    validation: list[dict[str, str]],
+    brief: list[str],
+) -> None:
+    st.subheader("Ask the Data")
+    st.caption(
+        "Ask questions about the current factor selection, window, rankings, weights, and period moves."
+    )
+
+    if "analyst_question" not in st.session_state:
+        st.session_state["analyst_question"] = "What is the clearest takeaway from this view?"
+
+    examples = [
+        "Why is the top-ranked metric leading this view?",
+        "What changed in the latest period?",
+        "Which period was the biggest outlier?",
+        "Summarize this for a finance team in three bullets.",
+    ]
+    example_cols = st.columns(4)
+    for column, example in zip(example_cols, examples):
+        with column:
+            if st.button(example, width="stretch"):
+                st.session_state["analyst_question"] = example
+
+    question = st.text_area(
+        "Question",
+        key="analyst_question",
+        height=90,
+        help="The model only receives the data currently visible in this app state.",
+    )
+
+    api_key = llm.api_key_from_environment(st.secrets)
+    model = llm.model_from_environment(st.secrets)
+    if not api_key:
+        st.info(
+            "Set `OPENAI_API_KEY` to enable live answers. The app will keep running without it."
+        )
+    else:
+        st.caption(f"Model: `{model}`")
+
+    ask_cols = st.columns([1, 1, 4])
+    with ask_cols[0]:
+        ask_clicked = st.button(
+            "Ask analyst",
+            type="primary",
+            disabled=not api_key or not question.strip(),
+        )
+    with ask_cols[1]:
+        if st.button("Clear answer"):
+            st.session_state.pop("analyst_answer", None)
+            st.session_state.pop("analyst_error", None)
+
+    if ask_clicked and api_key:
+        context = llm.build_analysis_context(
+            selected_metrics=selected_metrics,
+            start_year=start_year,
+            end_year=end_year,
+            panel=panel,
+            ranking=ranking,
+            metric_catalog=METRIC_CATALOG,
+            conflicts=conflicts,
+            weight_mode=weight_mode,
+            validation=validation,
+            brief=brief,
+        )
+        with st.spinner("Analyzing the current factor view..."):
+            try:
+                st.session_state["analyst_answer"] = llm.answer_question(
+                    question=question.strip(),
+                    context=context,
+                    api_key=api_key,
+                    model=model,
+                )
+                st.session_state.pop("analyst_error", None)
+            except Exception as exc:
+                st.session_state["analyst_error"] = str(exc)
+
+    if st.session_state.get("analyst_error"):
+        st.error(st.session_state["analyst_error"])
+    if st.session_state.get("analyst_answer"):
+        render_analyst_answer(st.session_state["analyst_answer"])
+
+
 if "selected_metrics" not in st.session_state:
     st.session_state["selected_metrics"] = PRESETS["Phase 9 - 7 factors"]
 if "active_preset" not in st.session_state:
@@ -500,6 +649,18 @@ with st.expander("Team brief", expanded=True):
         mime="text/markdown",
     )
 
+render_ask_data_panel(
+    panel=panel,
+    ranking=ranking,
+    selected_metrics=selected_metrics,
+    start_year=start_year,
+    end_year=end_year,
+    conflicts=conflicts,
+    weight_mode=weight_mode,
+    validation=validation,
+    brief=brief,
+)
+
 ranking_display = format_ranking(ranking)
 
 st.subheader("Ranking Table")
@@ -519,7 +680,7 @@ ranking_tab, weight_tab, heatmap_tab, benchmark_tab = st.tabs(
 with ranking_tab:
     st.plotly_chart(
         charts.mean_abs_bar(ranking),
-        use_container_width=True,
+        width="stretch",
         config={"displayModeBar": False},
     )
 with weight_tab:
@@ -527,7 +688,7 @@ with weight_tab:
     if weight_fig is not None:
         st.plotly_chart(
             weight_fig,
-            use_container_width=True,
+            width="stretch",
             config={"displayModeBar": False},
         )
         render_html_table(format_weight_table(panel, selected_metrics), height=280)
@@ -538,7 +699,7 @@ with heatmap_tab:
     if heatmap_fig is not None:
         st.plotly_chart(
             heatmap_fig,
-            use_container_width=True,
+            width="stretch",
             config={"displayModeBar": False},
         )
     else:
@@ -549,7 +710,7 @@ with benchmark_tab:
     if benchmark_fig is not None:
         st.plotly_chart(
             benchmark_fig,
-            use_container_width=True,
+            width="stretch",
             config={"displayModeBar": False},
         )
     render_html_table(format_comparison_table(comparison), height=320)
@@ -567,7 +728,7 @@ if period_options:
     with drill_left:
         st.plotly_chart(
             charts.period_driver_bar(panel, selected_period, selected_metrics),
-            use_container_width=True,
+            width="stretch",
             config={"displayModeBar": False},
         )
     with drill_right:
