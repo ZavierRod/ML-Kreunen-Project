@@ -8,11 +8,6 @@ from typing import Any
 
 import pandas as pd
 
-try:  # Keep the app usable before optional API dependencies are installed.
-    from openai import OpenAI
-except ImportError:  # pragma: no cover - depends on the local environment.
-    OpenAI = None  # type: ignore[assignment]
-
 
 DEFAULT_MODEL = "gpt-4o-mini"
 
@@ -197,10 +192,13 @@ def answer_question(
     model: str,
 ) -> dict[str, object]:
     """Ask the OpenAI Responses API for a structured, data-grounded answer."""
-    if OpenAI is None:
+    try:
+        from openai import OpenAI
+    except ImportError as exc:  # pragma: no cover - depends on the local environment.
         raise RuntimeError(
-            "The openai package is not installed. Run `pip install -r requirements.txt`."
-        )
+            "The openai package is not installed. Run `pip install -r requirements.txt`, "
+            "then restart Streamlit."
+        ) from exc
 
     client = OpenAI(api_key=api_key)
     response = client.responses.create(
