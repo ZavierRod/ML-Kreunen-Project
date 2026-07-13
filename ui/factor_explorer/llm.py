@@ -21,7 +21,10 @@ ANALYST_SCHEMA: dict[str, Any] = {
         "properties": {
             "answer": {
                 "type": "string",
-                "description": "Concise answer grounded only in the supplied factor data.",
+                "description": (
+                    "A multi-sentence analyst explanation grounded only in the "
+                    "supplied factor data."
+                ),
             },
             "supporting_points": {
                 "type": "array",
@@ -206,7 +209,12 @@ def answer_question(
         instructions=(
             "You are a careful finance data analyst embedded in a Streamlit app. "
             "Answer only from the supplied GOOG factor explorer context. "
+            "Write the main answer as a short analyst-style explanation, usually "
+            "2-4 sentences and roughly 80-160 words. Do not collapse the response "
+            "into one sentence unless the user explicitly asks for one. "
+            "Explain the why, not just the what. "
             "Cite metrics, periods, and values from the context in supporting_points. "
+            "Include 2-5 supporting_points when the data supports them. "
             "If the context does not support the answer, say what is missing. "
             "Do not provide investment advice or make claims about future stock performance."
         ),
@@ -217,7 +225,7 @@ def answer_question(
             f"{json.dumps(context, separators=(',', ':'), ensure_ascii=True)}"
         ),
         text={"format": ANALYST_SCHEMA},
-        max_output_tokens=1200,
+        max_output_tokens=1800,
     )
 
     raw_text = response.output_text
