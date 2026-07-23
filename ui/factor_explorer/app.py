@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import html
+import json
 import sys
 from pathlib import Path
 
@@ -16,8 +18,12 @@ try:
         METRIC_CATALOG,
         PRESETS,
         TOOLTIPS,
+        double_count_conflicts,
         has_derived_metric,
+        normalize_metric_selection,
+        picker_option_label,
         recommended_full_start,
+        weights_enabled,
     )
 except ImportError:  # pragma: no cover - Streamlit runs this file directly.
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -29,8 +35,12 @@ except ImportError:  # pragma: no cover - Streamlit runs this file directly.
         METRIC_CATALOG,
         PRESETS,
         TOOLTIPS,
+        double_count_conflicts,
         has_derived_metric,
+        normalize_metric_selection,
+        picker_option_label,
         recommended_full_start,
+        weights_enabled,
     )
 
 
@@ -90,6 +100,48 @@ st.markdown(
         background: #f8fafc;
     }
     .analyst-point strong {color: #111827;}
+    .picker-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        margin: 0.35rem 0 0.65rem;
+    }
+    .picker-badge {
+        border-radius: 999px;
+        padding: 0.18rem 0.55rem;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+    }
+    .picker-badge-weighted {
+        color: #166534;
+        background: #dcfce7;
+        border: 1px solid #86efac;
+    }
+    .picker-badge-rank {
+        color: #92400e;
+        background: #fef3c7;
+        border: 1px solid #fcd34d;
+    }
+    .picker-mode {
+        border: 1px solid var(--mode-border);
+        border-left: 4px solid var(--mode-accent);
+        border-radius: 8px;
+        padding: 0.65rem 0.75rem;
+        background: var(--mode-background);
+        margin-top: 0.65rem;
+    }
+    .picker-mode-title {
+        color: #111827;
+        font-size: 0.86rem;
+        font-weight: 750;
+    }
+    .picker-mode-copy {
+        color: #475569;
+        font-size: 0.76rem;
+        line-height: 1.35;
+        margin-top: 0.2rem;
+    }
     @media (max-width: 1100px) {
         .factor-insight-grid {grid-template-columns: repeat(2, minmax(0, 1fr));}
     }
@@ -155,6 +207,107 @@ def apply_preset(label: str, metrics: list[str], window_choice: str | None = Non
     st.session_state["active_preset"] = label
     if window_choice is not None:
         st.session_state["window_choice"] = window_choice
+
+
+def mark_custom_selection() -> None:
+    st.session_state["active_preset"] = "Custom selection"
+    stored = list(st.session_state.get("selected_metrics", []))
+    st.session_state["selected_metrics"] = normalize_metric_selection(stored)
+
+
+def render_picker_mode(selected_metrics: list[str]) -> None:
+    conflicts = double_count_conflicts(selected_metrics)
+    if not selected_metrics:
+        title = "Choose at least one metric"
+        copy = "The analysis starts as soon as you make a selection."
+        colors = ("#94a3b8", "#cbd5e1", "#f8fafc")
+    elif weights_enabled(selected_metrics):
+        title = "Weighted mode"
+        copy = "All selected factors are weight-ready; weights will be recomputed live."
+        colors = ("#16a34a", "#86efac", "#f0fdf4")
+    elif conflicts:
+        title = "Rank-only · overlapping inputs"
+        pairs = ", ".join(f"{derived} + {parent}" for derived, parent in conflicts)
+        copy = f"Derived metrics disable weights. Review possible double counts: {pairs}."
+        colors = ("#dc2626", "#fca5a5", "#fef2f2")
+    else:
+        title = "Rank-only mode"
+        copy = "A derived metric is selected, so weights are disabled for this view."
+        colors = ("#d97706", "#fcd34d", "#fffbeb")
+
+    accent, border, background = colors
+    st.markdown(
+        f"""
+        <div class="picker-mode" style="--mode-accent:{accent};--mode-border:{border};--mode-background:{background};">
+          <div class="picker-mode-title">{html.escape(title)}</div>
+          <div class="picker-mode-copy">{html.escape(copy)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_section_overview(
+    section_key: str,
+    section_context: dict[str, object],
+    *,
+    model: str,
+    api_key: str | None,
+) -> None:
+    scoped_context = llm.context_for_section_overview(section_context, section_key)
+    context_json = json.dumps(scoped_context, sort_keys=True, separators=(",", ":"))
+    context_id = hashlib.sha256(context_json.encode("utf-8")).hexdigest()
+    cache = st.session_state.setdefault("section_overview_results", {})
+    record = cache.get(section_key)
+    is_current = isinstance(record, dict) and record.get("context_id") == context_id
+    overview = record.get("overview") if is_current else None
+
+    with st.expander("AI overview", expanded=False):
+        st.caption(f"{model} · generated only when requested")
+
+        if record and not is_current:
+            st.info("The analysis controls changed. Generate a new overview when you want it.")
+
+        button_label = "Regenerate overview" if is_current else "Generate overview"
+        if st.button(button_label, key=f"generate_{section_key}", type="secondary"):
+            if not api_key:
+                st.warning("Set `OPENAI_API_KEY` to generate this overview.")
+            else:
+                try:
+                    with st.spinner("Generating this section overview..."):
+                        overview = llm.generate_section_overview(
+                            section_key=section_key,
+                            context=scoped_context,
+                            api_key=api_key,
+                            model=model,
+                        )
+                    cache[section_key] = {
+                        "context_id": context_id,
+                        "overview": overview,
+                    }
+                    st.session_state["section_overview_results"] = cache
+                    is_current = True
+                except Exception as exc:
+                    st.warning(f"The section overview could not be generated: {exc}")
+
+        if isinstance(overview, dict):
+            summary = overview.get("summary")
+            if summary:
+                st.markdown(str(summary))
+
+            key_points = overview.get("key_points")
+            if isinstance(key_points, list) and key_points:
+                st.markdown("**What stands out**")
+                for point in key_points:
+                    st.markdown(f"- {point}")
+
+            how_to_read = overview.get("how_to_read")
+            if how_to_read:
+                st.markdown(f"**How to read this:** {how_to_read}")
+
+            caveat = overview.get("caveat")
+            if caveat:
+                st.caption(f"Keep in mind: {caveat}")
 
 
 def format_ranking(ranking: pd.DataFrame) -> pd.DataFrame:
@@ -434,8 +587,17 @@ def render_analyst_answer(answer: dict[str, object]) -> None:
     followups = answer.get("suggested_followups", [])
     if isinstance(followups, list) and followups:
         st.markdown("**Suggested follow-ups**")
-        for followup in followups:
-            st.caption(str(followup))
+        for index, followup in enumerate(followups):
+            followup_text = str(followup).strip()
+            if not followup_text:
+                continue
+            if st.button(
+                followup_text,
+                key=f"analyst_followup_{index}",
+                width="stretch",
+            ):
+                st.session_state["analyst_pending_question"] = followup_text
+                st.rerun()
 
 
 def render_ask_data_panel(
@@ -454,6 +616,11 @@ def render_ask_data_panel(
     st.caption(
         "Ask questions about the current factor selection, window, rankings, weights, and period moves."
     )
+
+    pending_question = st.session_state.pop("analyst_pending_question", None)
+    auto_submit = isinstance(pending_question, str) and bool(pending_question.strip())
+    if auto_submit:
+        st.session_state["analyst_question"] = pending_question.strip()
 
     if "analyst_question" not in st.session_state:
         st.session_state["analyst_question"] = "What is the clearest takeaway from this view?"
@@ -498,7 +665,7 @@ def render_ask_data_panel(
             st.session_state.pop("analyst_answer", None)
             st.session_state.pop("analyst_error", None)
 
-    if ask_clicked and api_key:
+    if (ask_clicked or auto_submit) and api_key:
         context = llm.build_analysis_context(
             selected_metrics=selected_metrics,
             start_year=start_year,
@@ -543,44 +710,88 @@ st.caption(
 )
 
 with st.sidebar:
-    st.header("Factor Picker")
+    st.header("Build Your Factor Set")
+    st.caption("Start with a preset or assemble a custom comparison.")
 
-    preset_columns = st.columns(2)
-    with preset_columns[0]:
-        if st.button("Phase 8 - 6 factors", width="stretch"):
-            apply_preset("Phase 8 - 6 factors", PRESETS["Phase 8 - 6 factors"], "Full history")
-        if st.button("Phase 10 - EV 4 metrics", width="stretch"):
-            apply_preset(
-                "Phase 10 - EV 4 metrics",
-                PRESETS["Phase 10 - EV 4 metrics"],
-                "Full history",
-            )
-        if st.button("Top 4 movers", width="stretch"):
-            apply_preset("Top 4 movers (full history)", cached_top_movers(), "Full history")
-    with preset_columns[1]:
-        if st.button("Phase 9 - 7 factors", width="stretch"):
-            apply_preset("Phase 9 - 7 factors", PRESETS["Phase 9 - 7 factors"], "Full history")
-        if st.button("Phase 11 - effective 2", width="stretch"):
-            apply_preset(
-                "Phase 11 - effective 2",
-                PRESETS["Phase 11 - effective 2"],
-                "Full history",
-            )
+    with st.container(border=True):
+        st.markdown("**Quick starts**")
+        preset_columns = st.columns(2)
+        with preset_columns[0]:
+            if st.button("Phase 8 · 6", width="stretch", help="Six standalone factors; weighted."):
+                apply_preset(
+                    "Phase 8 - 6 factors",
+                    PRESETS["Phase 8 - 6 factors"],
+                    "Full history",
+                )
+            if st.button("Phase 10 · EV", width="stretch", help="EV-derived comparison; rank-only."):
+                apply_preset(
+                    "Phase 10 - EV 4 metrics",
+                    PRESETS["Phase 10 - EV 4 metrics"],
+                    "Full history",
+                )
+            if st.button("Top 4 movers", width="stretch", help="Largest standalone movers; weighted."):
+                apply_preset(
+                    "Top 4 movers (full history)",
+                    cached_top_movers(),
+                    "Full history",
+                )
+        with preset_columns[1]:
+            if st.button("Phase 9 · 7", width="stretch", help="Seven standalone factors; weighted."):
+                apply_preset(
+                    "Phase 9 - 7 factors",
+                    PRESETS["Phase 9 - 7 factors"],
+                    "Full history",
+                )
+            if st.button("Phase 11 · effective", width="stretch", help="Effective derived metrics; rank-only."):
+                apply_preset(
+                    "Phase 11 - effective 2",
+                    PRESETS["Phase 11 - effective 2"],
+                    "Full history",
+                )
+        st.caption(f"Active: {st.session_state['active_preset']}")
 
-    selected_metrics = st.multiselect(
-        "Metrics",
-        options=ALL_METRICS,
-        key="selected_metrics",
-        help="Standalone factors can be weighted. Derived metrics are rank-only.",
-    )
+    with st.container(border=True):
+        st.markdown("**Choose metrics**")
+        st.markdown(
+            """
+            <div class="picker-legend">
+              <span class="picker-badge picker-badge-weighted">● Weight-ready</span>
+              <span class="picker-badge picker-badge-rank">◇ Rank-only</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.caption("Adding any ◇ derived metric switches the entire view to rank-only.")
 
-    st.markdown(f"**{len(selected_metrics)} factors selected**")
+        stored_selection = list(st.session_state.get("selected_metrics", []))
+        current_selection = normalize_metric_selection(stored_selection)
+        if current_selection != stored_selection:
+            st.session_state["selected_metrics"] = current_selection
+        selected_metrics = st.multiselect(
+            "Factors and derived metrics",
+            options=ALL_METRICS,
+            key="selected_metrics",
+            format_func=lambda metric: picker_option_label(metric, current_selection),
+            placeholder="Add a metric",
+            help=(
+                "Every option shows its weighting impact before selection. "
+                "A warning symbol marks overlap with a currently selected input."
+            ),
+            on_change=mark_custom_selection,
+        )
+        selected_metrics = normalize_metric_selection(list(selected_metrics))
 
-    if selected_metrics:
-        st.markdown("**Selected metric types**")
-        for metric in selected_metrics:
-            spec = METRIC_CATALOG[metric]
-            st.caption(f"{metric}: {spec.metric_type}, Phase {spec.source_phase}")
+        render_picker_mode(selected_metrics)
+        st.caption(f"{len(selected_metrics)} selected")
+
+        if selected_metrics:
+            with st.expander("Selection details"):
+                for metric in selected_metrics:
+                    spec = METRIC_CATALOG[metric]
+                    mode = "Weight-ready" if spec.weightable else "Rank-only"
+                    st.markdown(
+                        f"**{metric}**  \n{mode} · {spec.metric_type} · Phase {spec.source_phase}"
+                    )
 
     st.header("Window")
     window_choice = st.radio(
@@ -649,6 +860,37 @@ with st.expander("Team brief", expanded=True):
         mime="text/markdown",
     )
 
+comparison = cached_preset_comparison(tuple(selected_metrics), start_year, end_year)
+period_options = panel["period"].dropna().drop_duplicates().tolist()
+if period_options:
+    if st.session_state.get("selected_period") not in period_options:
+        st.session_state["selected_period"] = period_options[-1]
+    selected_period: str | None = st.session_state["selected_period"]
+else:
+    selected_period = None
+
+section_api_key = llm.api_key_from_environment(st.secrets)
+section_model = llm.model_from_environment(st.secrets)
+analysis_context = llm.build_analysis_context(
+    selected_metrics=selected_metrics,
+    start_year=start_year,
+    end_year=end_year,
+    panel=panel,
+    ranking=ranking,
+    metric_catalog=METRIC_CATALOG,
+    conflicts=conflicts,
+    weight_mode=weight_mode,
+    validation=validation,
+    brief=brief,
+)
+section_context = llm.build_section_overview_context(
+    analysis_context=analysis_context,
+    panel=panel,
+    detail=detail,
+    preset_comparison=comparison,
+    selected_period=selected_period,
+)
+
 render_ask_data_panel(
     panel=panel,
     ranking=ranking,
@@ -664,6 +906,12 @@ render_ask_data_panel(
 ranking_display = format_ranking(ranking)
 
 st.subheader("Ranking Table")
+render_section_overview(
+    "ranking_table",
+    section_context,
+    model=section_model,
+    api_key=section_api_key,
+)
 st.caption("mean_abs: " + TOOLTIPS["mean_abs"])
 render_html_table(format_percent_columns(ranking_display))
 st.download_button(
@@ -674,6 +922,12 @@ st.download_button(
 )
 
 st.subheader("Visual Analysis")
+render_section_overview(
+    "visual_analysis",
+    section_context,
+    model=section_model,
+    api_key=section_api_key,
+)
 ranking_tab, weight_tab, heatmap_tab, benchmark_tab = st.tabs(
     ["Ranking", "Weights", "Heatmap", "Preset benchmark"]
 )
@@ -705,7 +959,6 @@ with heatmap_tab:
     else:
         st.info("No heatmap values for this selection.")
 with benchmark_tab:
-    comparison = cached_preset_comparison(tuple(selected_metrics), start_year, end_year)
     benchmark_fig = charts.preset_comparison_bar(comparison)
     if benchmark_fig is not None:
         st.plotly_chart(
@@ -716,12 +969,17 @@ with benchmark_tab:
     render_html_table(format_comparison_table(comparison), height=320)
 
 st.subheader("Period Drilldown")
-period_options = panel["period"].dropna().drop_duplicates().tolist()
+render_section_overview(
+    "period_drilldown",
+    section_context,
+    model=section_model,
+    api_key=section_api_key,
+)
 if period_options:
     selected_period = st.select_slider(
         "YoY period",
         options=period_options,
-        value=period_options[-1],
+        key="selected_period",
         help="Review which factor dominated a single year-over-year period.",
     )
     drill_left, drill_right = st.columns([1.15, 0.85])
@@ -738,6 +996,12 @@ else:
     st.info("No period rows are available for the selected window.")
 
 st.subheader("Per-Period Detail")
+render_section_overview(
+    "per_period_detail",
+    section_context,
+    model=section_model,
+    api_key=section_api_key,
+)
 detail_row_count = len(detail)
 detail_column_count = len(detail.columns)
 st.caption(

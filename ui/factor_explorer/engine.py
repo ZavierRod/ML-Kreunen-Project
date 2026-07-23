@@ -293,23 +293,23 @@ def analyze_selection(
 
 
 def detail_table(panel: pd.DataFrame, selected_metrics: list[str]) -> pd.DataFrame:
-    pct_wide = panel.pivot_table(
+    # Each panel row is unique by period and metric. ``pivot_table`` with
+    # ``dropna=False`` expands a multi-column index into the Cartesian product
+    # of all start years, end years, and period labels, creating mostly-empty
+    # synthetic rows. A strict pivot preserves only periods present in panel.
+    pct_wide = panel.pivot(
         index=["from_year", "to_year", "period"],
         columns="metric",
         values="pct_change",
-        aggfunc="first",
-        dropna=False,
     )
     pct_wide = pct_wide.reindex(columns=selected_metrics)
     pct_wide.columns = [f"{metric} pct" for metric in pct_wide.columns]
 
     if weights_enabled(selected_metrics):
-        weight_wide = panel.pivot_table(
+        weight_wide = panel.pivot(
             index=["from_year", "to_year", "period"],
             columns="metric",
             values="weight",
-            aggfunc="first",
-            dropna=False,
         )
         weight_wide = weight_wide.reindex(columns=selected_metrics)
         weight_wide.columns = [f"{metric} weight" for metric in weight_wide.columns]

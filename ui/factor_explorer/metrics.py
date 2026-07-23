@@ -146,6 +146,51 @@ def weights_enabled(metrics: list[str]) -> bool:
     return bool(metrics) and all(is_standalone(metric) for metric in metrics)
 
 
+def normalize_metric_selection(values: list[object]) -> list[str]:
+    """Convert persisted picker display labels back to canonical metric names."""
+    normalized: list[str] = []
+    for value in values:
+        text = str(value)
+        if text in METRIC_CATALOG:
+            metric = text
+        else:
+            candidate = text.lstrip("●◇⚠ ").split(" — ", maxsplit=1)[0]
+            if candidate not in METRIC_CATALOG:
+                continue
+            metric = candidate
+        if metric not in normalized:
+            normalized.append(metric)
+    return normalized
+
+
+def picker_option_label(metric: str, selected_metrics: list[str]) -> str:
+    """Describe a metric's weighting impact before it is selected."""
+    spec = METRIC_CATALOG[metric]
+    normalized_selection = normalize_metric_selection(list(selected_metrics))
+    selected = set(normalized_selection)
+
+    if spec.weightable:
+        overlapping_derived = [
+            selected_metric
+            for selected_metric in normalized_selection
+            if metric in METRIC_CATALOG[selected_metric].parents
+        ]
+        if overlapping_derived:
+            return (
+                f"⚠ {metric} — Weight-ready; overlaps "
+                f"{', '.join(overlapping_derived)}"
+            )
+        return f"● {metric} — Weight-ready"
+
+    overlapping_inputs = sorted(spec.parents & selected)
+    if overlapping_inputs:
+        return (
+            f"⚠ {metric} — Rank-only; overlaps "
+            f"{', '.join(overlapping_inputs)}"
+        )
+    return f"◇ {metric} — Rank-only"
+
+
 def double_count_conflicts(metrics: list[str]) -> list[tuple[str, str]]:
     selected = set(metrics)
     conflicts: list[tuple[str, str]] = []
