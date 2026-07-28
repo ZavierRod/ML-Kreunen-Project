@@ -59,6 +59,15 @@ Implementation status:
 - Forecast records now include each analog's realized next-month excess return plus
   the analog set's mean, median, positive-outcome rate, and 10th-to-90th percentile
   range. The local UI exposes the complete evidence in a dedicated tab.
+- The local forecast UI now includes an evidence-grounded OpenAI analyst. It sends
+  only the immutable forecast record and aggregate analog evidence by default,
+  uses strict structured output with API storage disabled, pins every answer to the
+  forecast-run ID, and makes suggested follow-up questions directly clickable.
+- Analyst language passes deterministic benchmark-relative and evidence-availability
+  checks. Failed drafts receive constrained retries, then fall back to a disclosed
+  deterministic summary rather than displaying noncompliant prose.
+- Questions and accepted answers are appended to ignored local JSONL audit files;
+  credentials and raw WRDS research panels are never included.
 - Delisting-return and actual fundamental-availability-date audits remain open.
 
 ## 1. Feature Summary

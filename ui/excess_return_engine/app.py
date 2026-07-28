@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:
 
 from excess_return_engine.features import FACTOR_IDS, FACTOR_REGISTRY
 from excess_return_engine.model import ForecastRequest, generate_forecast
+from ui.excess_return_engine import analyst
 from ui.excess_return_engine.presentation import (
     FACTOR_PRESETS,
     company_options,
@@ -105,6 +106,161 @@ def contribution_chart(table: pd.DataFrame) -> go.Figure:
         showlegend=False,
     )
     return figure
+
+
+def render_forecast_analyst_answer(answer: dict[str, object]) -> None:
+    st.markdown(str(answer.get("answer", "")))
+    st.caption(f"Forecast run: `{answer.get('forecast_run_id', '')}`")
+    if answer.get("generation_mode") == "deterministic_policy_fallback":
+        st.caption(
+            "The model draft did not pass evidence-language checks; this answer "
+            "uses the deterministic forecast summary."
+        )
+
+    supporting_points = answer.get("supporting_points", [])
+    if isinstance(supporting_points, list) and supporting_points:
+        st.markdown("**Supporting evidence**")
+        for point in supporting_points:
+            if not isinstance(point, dict):
+                continue
+            st.markdown(
+                f"**{point.get('label', '')}:** {point.get('value', '')}"
+            )
+            st.caption(
+                f"{point.get('explanation', '')} "
+                f"Source: {str(point.get('evidence_source', '')).replace('_', ' ')}."
+            )
+
+    caveats = answer.get("caveats", [])
+    if isinstance(caveats, list) and caveats:
+        st.markdown("**Caveats**")
+        for caveat in caveats:
+            st.caption(str(caveat))
+
+    followups = answer.get("suggested_followups", [])
+    if isinstance(followups, list) and followups:
+        st.markdown("**Suggested follow-ups**")
+        for index, followup in enumerate(followups):
+            followup_text = str(followup).strip()
+            if not followup_text:
+                continue
+            if st.button(
+                followup_text,
+                key=(
+                    f"forecast_analyst_followup_"
+                    f"{answer.get('forecast_run_id', '')}_{index}"
+                ),
+                width="stretch",
+            ):
+                st.session_state["forecast_analyst_pending_question"] = followup_text
+                st.rerun()
+
+
+def render_forecast_analyst(result) -> None:
+    st.divider()
+    st.subheader("Ask the Forecast")
+
+    if st.session_state.get("forecast_analyst_run_id") != result.configuration_id:
+        st.session_state["forecast_analyst_run_id"] = result.configuration_id
+        for key in (
+            "forecast_analyst_answer",
+            "forecast_analyst_error",
+            "forecast_analyst_pending_question",
+            "forecast_analyst_question",
+        ):
+            st.session_state.pop(key, None)
+
+    pending = st.session_state.pop("forecast_analyst_pending_question", None)
+    auto_submit = isinstance(pending, str) and bool(pending.strip())
+    if auto_submit:
+        st.session_state["forecast_analyst_question"] = pending.strip()
+    if "forecast_analyst_question" not in st.session_state:
+        st.session_state["forecast_analyst_question"] = (
+            "What is the clearest takeaway from this forecast?"
+        )
+
+    examples = [
+        "Why does the model expect this excess return?",
+        "What makes this forecast uncertain?",
+        "What were the excess-return outcomes in similar historical conditions?",
+    ]
+    example_columns = st.columns(3)
+    for column, example in zip(example_columns, examples):
+        with column:
+            if st.button(
+                example,
+                key=f"forecast_analyst_example_{examples.index(example)}",
+                width="stretch",
+            ):
+                st.session_state["forecast_analyst_question"] = example
+
+    question = st.text_area(
+        "Question",
+        key="forecast_analyst_question",
+        height=90,
+        max_chars=analyst.MAX_QUESTION_LENGTH,
+    )
+    api_key = analyst.api_key_from_environment(st.secrets)
+    model = analyst.model_from_environment(st.secrets)
+    include_analog_rows = analyst.include_analog_rows_from_environment(st.secrets)
+
+    if not api_key:
+        st.info(
+            "Set `OPENAI_API_KEY` in local Streamlit secrets to enable forecast questions."
+        )
+    else:
+        evidence_scope = (
+            "aggregate evidence plus individual analog rows"
+            if include_analog_rows
+            else "aggregate evidence; individual analog rows excluded"
+        )
+        st.caption(f"Model: `{model}` · API evidence: {evidence_scope}")
+
+    action_columns = st.columns([1, 1, 4])
+    with action_columns[0]:
+        ask_clicked = st.button(
+            "Ask analyst",
+            type="primary",
+            icon=":material/chat:",
+            disabled=not api_key or not question.strip(),
+        )
+    with action_columns[1]:
+        if st.button("Clear answer"):
+            st.session_state.pop("forecast_analyst_answer", None)
+            st.session_state.pop("forecast_analyst_error", None)
+
+    if (ask_clicked or auto_submit) and api_key:
+        context = analyst.build_forecast_context(
+            result,
+            include_analog_rows=include_analog_rows,
+        )
+        with st.spinner("Analyzing this forecast run..."):
+            try:
+                answer = analyst.answer_forecast_question(
+                    question=question,
+                    context=context,
+                    api_key=api_key,
+                    model=model,
+                )
+                analyst.save_analyst_exchange(
+                    output_dir=ARTIFACT_DIR / "analyst_exchanges",
+                    forecast_run_id=result.configuration_id,
+                    question=question,
+                    model=model,
+                    include_analog_rows=include_analog_rows,
+                    answer=answer,
+                )
+                st.session_state["forecast_analyst_answer"] = answer
+                st.session_state.pop("forecast_analyst_error", None)
+            except Exception as exc:
+                st.session_state["forecast_analyst_error"] = str(exc)
+
+    if st.session_state.get("forecast_analyst_error"):
+        st.error(st.session_state["forecast_analyst_error"])
+    if st.session_state.get("forecast_analyst_answer"):
+        render_forecast_analyst_answer(
+            st.session_state["forecast_analyst_answer"]
+        )
 
 
 st.title("One-Month Excess Return")
@@ -391,6 +547,8 @@ with data_tab:
         f"Data: {result.data_version} · Target: {result.target_version} · "
         f"Features: {result.feature_version} · Model: {result.model_version}"
     )
+
+render_forecast_analyst(result)
 
 st.download_button(
     "Download forecast JSON",

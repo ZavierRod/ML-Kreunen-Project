@@ -130,3 +130,29 @@ metrics, version metadata, and JSON export.
 This research UI is intentionally separate from the public Streamlit deployment.
 The licensed WRDS-derived panels remain local and must not be committed to Git or
 bundled into a public application.
+
+## Ask the Forecast
+
+After generating a forecast, the local UI can send a question and that run's
+structured evidence to the OpenAI Responses API. Numerical forecasts always come
+from the quantitative engine; the LLM receives no training or inference panel and
+is limited to explaining the immutable forecast record.
+
+By default, the API context includes forecast outputs, factor contributions,
+regimes, aggregate historical-analog statistics, validation metrics, and
+data-quality fields. Individual historical analog rows are excluded. They can be
+enabled only through an explicit local setting:
+
+```toml
+EXCESS_RETURN_LLM_INCLUDE_ANALOG_ROWS = true
+```
+
+API requests use strict structured output and `store=False`. Returned language is
+checked for benchmark-relative terminology, answer length, and unsupported
+follow-up requests. Noncompliant drafts are retried; repeated failure produces a
+disclosed deterministic evidence summary instead of showing unsafe prose.
+
+Each accepted question and answer is appended locally under
+`local_artifacts/excess_return_engine/analyst_exchanges/`. These ignored JSONL audit
+files contain the forecast-run ID, question, model, evidence-scope flag, and answer,
+but never the API key or raw research panels.
