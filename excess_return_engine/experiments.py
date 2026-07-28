@@ -1,0 +1,291 @@
+"""Local saved-experiment manifests and comparison records."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+
+from .model import ForecastResult
+
+EXPERIMENT_VERSION = "saved-experiment-v1"
+MAX_EXPERIMENT_NAME_LENGTH = 80
+
+
+@dataclass(frozen=True)
+class SavedContribution:
+    factor_id: str
+    contribution: float
+
+
+@dataclass(frozen=True)
+class SavedExperiment:
+    experiment_id: str
+    experiment_version: str
+    name: str
+    saved_at: str
+    configuration_id: str
+    permno: int
+    ticker: str | None
+    company: str | None
+    as_of_date: str
+    target_month: str
+    benchmark_id: str
+    selected_factors: tuple[str, ...]
+    interval_level: float
+    expected_excess_return: float
+    probability_positive: float
+    interval_lower: float
+    interval_upper: float
+    model_reliability_score: float
+    model_reliability_label: str
+    data_quality_score: float
+    data_quality_label: str
+    oos_r2_vs_zero: float
+    interval_coverage: float
+    contributions: tuple[SavedContribution, ...]
+    data_version: str
+    feature_version: str
+    target_version: str
+    model_version: str
+    reliability_version: str
+    validation_version: str
+
+    def to_dict(self) -> dict[str, object]:
+        payload = asdict(self)
+        payload["selected_factors"] = list(self.selected_factors)
+        payload["contributions"] = [
+            asdict(contribution) for contribution in self.contributions
+        ]
+        return payload
+
+
+def save_experiment(
+    result: ForecastResult,
+    name: str,
+    output_dir: str | Path,
+    *,
+    saved_at: datetime | None = None,
+) -> tuple[SavedExperiment, Path]:
+    clean_name = _validate_name(name)
+    timestamp = (saved_at or datetime.now(UTC)).astimezone(UTC)
+    experiment_id = _experiment_id(clean_name, result.configuration_id)
+    experiment = SavedExperiment(
+        experiment_id=experiment_id,
+        experiment_version=EXPERIMENT_VERSION,
+        name=clean_name,
+        saved_at=timestamp.isoformat(),
+        configuration_id=result.configuration_id,
+        permno=int(result.permno),
+        ticker=result.ticker,
+        company=result.company,
+        as_of_date=result.as_of_date,
+        target_month=result.target_month,
+        benchmark_id=result.benchmark_id,
+        selected_factors=tuple(result.selected_factors),
+        interval_level=float(result.interval_level),
+        expected_excess_return=float(result.expected_excess_return),
+        probability_positive=float(result.probability_positive),
+        interval_lower=float(result.interval_lower),
+        interval_upper=float(result.interval_upper),
+        model_reliability_score=float(
+            result.reliability.model_reliability_score
+        ),
+        model_reliability_label=result.reliability.model_reliability_label,
+        data_quality_score=float(result.reliability.data_quality_score),
+        data_quality_label=result.reliability.data_quality_label,
+        oos_r2_vs_zero=float(result.validation_metrics["oos_r2_vs_zero"]),
+        interval_coverage=float(result.validation_metrics["interval_coverage"]),
+        contributions=tuple(
+            SavedContribution(
+                factor_id=item.factor_id,
+                contribution=float(item.contribution),
+            )
+            for item in result.contributions
+        ),
+        data_version=result.data_version,
+        feature_version=result.feature_version,
+        target_version=result.target_version,
+        model_version=result.model_version,
+        reliability_version=result.reliability_version,
+        validation_version=result.validation_version,
+    )
+    destination = Path(output_dir).expanduser().resolve()
+    destination.mkdir(parents=True, exist_ok=True)
+    output_path = destination / f"{experiment_id}.json"
+    temporary_path = output_path.with_suffix(".json.tmp")
+    temporary_path.write_text(
+        json.dumps(experiment.to_dict(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary_path.replace(output_path)
+    return experiment, output_path
+
+
+def list_experiments(output_dir: str | Path) -> tuple[SavedExperiment, ...]:
+    directory = Path(output_dir).expanduser().resolve()
+    if not directory.is_dir():
+        return ()
+    experiments = [
+        _experiment_from_dict(
+            json.loads(path.read_text(encoding="utf-8"))
+        )
+        for path in sorted(directory.glob("*.json"))
+    ]
+    return tuple(
+        sorted(
+            experiments,
+            key=lambda item: (item.saved_at, item.name),
+            reverse=True,
+        )
+    )
+
+
+def comparison_warnings(
+    experiments: tuple[SavedExperiment, ...],
+) -> tuple[str, ...]:
+    if len(experiments) < 2:
+        return ()
+    checks = (
+        ("permno", "company/security"),
+        ("as_of_date", "as-of date"),
+        ("target_month", "target month"),
+        ("benchmark_id", "benchmark"),
+        ("data_version", "data version"),
+    )
+    warnings = []
+    for field, label in checks:
+        values = {getattr(item, field) for item in experiments}
+        if len(values) > 1:
+            warnings.append(
+                f"Selected experiments use different {label} values."
+            )
+    return tuple(warnings)
+
+
+def comparison_records(
+    experiments: tuple[SavedExperiment, ...],
+) -> list[dict[str, object]]:
+    if not experiments:
+        return []
+    baseline_return = experiments[0].expected_excess_return
+    baseline_probability = experiments[0].probability_positive
+    return [
+        {
+            "Experiment": comparison_label(item),
+            "Ticker": item.ticker or "N/A",
+            "Factors": len(item.selected_factors),
+            "Factor set": ", ".join(item.selected_factors),
+            "Expected excess return": item.expected_excess_return,
+            "Expected-return delta vs first": (
+                item.expected_excess_return - baseline_return
+            ),
+            "Probability positive": item.probability_positive,
+            "Probability delta vs first": (
+                item.probability_positive - baseline_probability
+            ),
+            "Interval width": item.interval_upper - item.interval_lower,
+            "Model reliability": item.model_reliability_score,
+            "Data quality": item.data_quality_score,
+            "OOS R² vs zero": item.oos_r2_vs_zero,
+            "Interval coverage": item.interval_coverage,
+            "Run ID": item.configuration_id,
+        }
+        for item in experiments
+    ]
+
+
+def contribution_records(
+    experiments: tuple[SavedExperiment, ...],
+) -> list[dict[str, object]]:
+    rows = []
+    for experiment in experiments:
+        for contribution in experiment.contributions:
+            rows.append(
+                {
+                    "Experiment": comparison_label(experiment),
+                    "Factor ID": contribution.factor_id,
+                    "Contribution": contribution.contribution,
+                }
+            )
+    return rows
+
+
+def comparison_label(experiment: SavedExperiment) -> str:
+    ticker = experiment.ticker or f"PERMNO {experiment.permno}"
+    return (
+        f"{experiment.name} · {ticker} · "
+        f"{experiment.configuration_id[:6]}"
+    )
+
+
+def _validate_name(name: str) -> str:
+    clean = " ".join(name.split())
+    if not clean:
+        raise ValueError("Experiment name is required.")
+    if len(clean) > MAX_EXPERIMENT_NAME_LENGTH:
+        raise ValueError(
+            f"Experiment name must be {MAX_EXPERIMENT_NAME_LENGTH} characters or fewer."
+        )
+    return clean
+
+
+def _experiment_id(name: str, configuration_id: str) -> str:
+    payload = json.dumps(
+        {"name": name, "configuration_id": configuration_id},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return hashlib.sha256(payload).hexdigest()[:16]
+
+
+def _experiment_from_dict(payload: dict[str, object]) -> SavedExperiment:
+    required_version = payload.get("experiment_version")
+    if required_version != EXPERIMENT_VERSION:
+        raise ValueError(
+            f"Unsupported experiment version: {required_version!r}."
+        )
+    return SavedExperiment(
+        experiment_id=str(payload["experiment_id"]),
+        experiment_version=str(payload["experiment_version"]),
+        name=str(payload["name"]),
+        saved_at=str(payload["saved_at"]),
+        configuration_id=str(payload["configuration_id"]),
+        permno=int(payload["permno"]),
+        ticker=_optional_string(payload.get("ticker")),
+        company=_optional_string(payload.get("company")),
+        as_of_date=str(payload["as_of_date"]),
+        target_month=str(payload["target_month"]),
+        benchmark_id=str(payload["benchmark_id"]),
+        selected_factors=tuple(str(item) for item in payload["selected_factors"]),
+        interval_level=float(payload["interval_level"]),
+        expected_excess_return=float(payload["expected_excess_return"]),
+        probability_positive=float(payload["probability_positive"]),
+        interval_lower=float(payload["interval_lower"]),
+        interval_upper=float(payload["interval_upper"]),
+        model_reliability_score=float(payload["model_reliability_score"]),
+        model_reliability_label=str(payload["model_reliability_label"]),
+        data_quality_score=float(payload["data_quality_score"]),
+        data_quality_label=str(payload["data_quality_label"]),
+        oos_r2_vs_zero=float(payload["oos_r2_vs_zero"]),
+        interval_coverage=float(payload["interval_coverage"]),
+        contributions=tuple(
+            SavedContribution(
+                factor_id=str(item["factor_id"]),
+                contribution=float(item["contribution"]),
+            )
+            for item in payload["contributions"]
+        ),
+        data_version=str(payload["data_version"]),
+        feature_version=str(payload["feature_version"]),
+        target_version=str(payload["target_version"]),
+        model_version=str(payload["model_version"]),
+        reliability_version=str(payload["reliability_version"]),
+        validation_version=str(payload["validation_version"]),
+    )
+
+
+def _optional_string(value: object) -> str | None:
+    return None if value is None else str(value)

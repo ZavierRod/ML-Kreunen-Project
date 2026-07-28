@@ -9,6 +9,8 @@ from ui.excess_return_engine.presentation import (
     configuration_quality,
     correlation_warning_table,
     factor_option_label,
+    experiment_comparison_table,
+    experiment_contribution_table,
     historical_analog_table,
     predictive_strength_label,
     reliability_component_table,
@@ -200,6 +202,32 @@ class PresentationTests(unittest.TestCase):
             yearly_validation_table(result).iloc[0]["Outcome year"],
             2025,
         )
+
+    def test_experiment_comparison_uses_factor_labels(self) -> None:
+        experiment = SimpleNamespace(
+            name="Baseline",
+            configuration_id="abcdef123",
+            ticker="AAA",
+            permno=1,
+            selected_factors=("size",),
+            expected_excess_return=0.01,
+            probability_positive=0.55,
+            interval_lower=-0.05,
+            interval_upper=0.07,
+            model_reliability_score=65.0,
+            data_quality_score=79.0,
+            oos_r2_vs_zero=0.002,
+            interval_coverage=0.8,
+            contributions=(
+                SimpleNamespace(factor_id="size", contribution=0.001),
+            ),
+        )
+
+        comparison = experiment_comparison_table((experiment,))
+        contributions = experiment_contribution_table((experiment,))
+
+        self.assertEqual(comparison.iloc[0]["Factor set"], "Size")
+        self.assertEqual(contributions.iloc[0]["Factor"], "Size")
 
 
 if __name__ == "__main__":

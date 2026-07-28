@@ -83,6 +83,15 @@ Implementation status:
   reserves its final 24 months for untouched evaluation, producing ten equal-count
   probability-calibration bins and outcome-year validation tables for 2024 and
   2025. UI-generated runs are now saved automatically to ignored local storage.
+- Versioned saved experiments are implemented in
+  `excess_return_engine/experiments.py`. The local UI can name and save a compact
+  forecast manifest, restore its company, selected factors, and interval, compare
+  compatible runs side by side, chart contribution changes, and export the
+  comparison as CSV. It surfaces explicit warnings for security, as-of, target,
+  benchmark, and data-version mismatches.
+- Experiment manifests remain in ignored local storage and contain configuration,
+  forecast summaries, contributions, and version IDs only. They exclude raw WRDS
+  rows, historical analog rows, API credentials, and licensed source files.
 - Delisting-return and actual fundamental-availability-date audits remain open.
 
 ## 1. Feature Summary

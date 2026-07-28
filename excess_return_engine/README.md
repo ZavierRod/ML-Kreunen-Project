@@ -154,11 +154,38 @@ Set `EXCESS_RETURN_ARTIFACT_DIR` to use a different local panel directory. The U
 supports permanent-security company selection, factor presets and custom factor
 sets, configurable prediction intervals, pre-run data-quality gates, contribution
 attribution, current factor regimes, historical analog outcomes, validation
-metrics, version metadata, and JSON export.
+metrics, version metadata, saved experiment comparison, and JSON export.
 
 This research UI is intentionally separate from the public Streamlit deployment.
 The licensed WRDS-derived panels remain local and must not be committed to Git or
 bundled into a public application.
+
+## Saved experiments
+
+After generating a forecast, save it as a named experiment from the local UI. A
+saved experiment contains the configuration and compact forecast summary needed to
+restore and compare a run:
+
+- Permanent security ID, display ticker, company name, and as-of date
+- Selected factor IDs, interval level, target, and benchmark
+- Expected excess return, positive-return probability, interval, and quality scores
+- Factor contributions and model, feature, target, and data version IDs
+
+Saved manifests are versioned JSON files under the ignored
+`local_artifacts/excess_return_engine/experiments/` directory. They do not contain
+raw panel rows, historical analog rows, credentials, or licensed source data.
+Saving the same name and configuration is idempotent.
+
+The comparison workspace displays return and probability deltas relative to the
+first selected experiment, grouped factor contributions, and a downloadable CSV.
+It warns when selected experiments differ in security, as-of date, target,
+benchmark, or data version so comparisons are not presented as equivalent when
+their underlying contracts differ.
+
+Applying a saved configuration restores its company, factor set, and prediction
+interval. The current research UI can restore only an as-of date present in the
+loaded inference snapshot; older snapshots must first be loaded through
+`EXCESS_RETURN_ARTIFACT_DIR`.
 
 ## Ask the Forecast
 

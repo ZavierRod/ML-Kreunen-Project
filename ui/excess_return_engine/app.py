@@ -19,6 +19,12 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from excess_return_engine.experiments import (
+    comparison_label,
+    comparison_warnings,
+    list_experiments,
+    save_experiment,
+)
 from excess_return_engine.features import FACTOR_IDS, FACTOR_REGISTRY
 from excess_return_engine.model import (
     ForecastRequest,
@@ -34,6 +40,8 @@ from ui.excess_return_engine.presentation import (
     correlation_warning_table,
     contribution_table,
     factor_option_label,
+    experiment_comparison_table,
+    experiment_contribution_table,
     historical_analog_table,
     predictive_strength_label,
     reliability_component_table,
@@ -46,6 +54,7 @@ DEFAULT_ARTIFACT_DIR = ROOT / "local_artifacts" / "excess_return_engine"
 ARTIFACT_DIR = Path(
     os.getenv("EXCESS_RETURN_ARTIFACT_DIR", str(DEFAULT_ARTIFACT_DIR))
 ).expanduser()
+EXPERIMENT_DIR = ARTIFACT_DIR / "experiments"
 
 st.set_page_config(
     page_title="One-Month Excess Return",
@@ -151,6 +160,142 @@ def calibration_chart(table: pd.DataFrame) -> go.Figure:
         legend=dict(orientation="h", y=1.08),
     )
     return figure
+
+
+def experiment_contribution_chart(table: pd.DataFrame) -> go.Figure:
+    figure = go.Figure()
+    for experiment, group in table.groupby("Experiment", sort=False):
+        figure.add_trace(
+            go.Bar(
+                name=experiment,
+                x=group["Factor"],
+                y=group["Contribution"] * 100,
+                hovertemplate=(
+                    "<b>%{x}</b><br>Contribution: %{y:+.3f}%<extra></extra>"
+                ),
+            )
+        )
+    figure.add_hline(y=0, line_color="#6b7280", line_width=1)
+    figure.update_layout(
+        barmode="group",
+        height=390,
+        margin=dict(l=20, r=20, t=20, b=90),
+        xaxis_title=None,
+        yaxis_title="Contribution to expected excess return (%)",
+        legend=dict(orientation="h", y=1.10),
+    )
+    return figure
+
+
+def render_experiment_workspace(result) -> None:
+    st.divider()
+    st.subheader("Saved Experiments")
+
+    saved_message = st.session_state.pop("experiment_saved_message", None)
+    if saved_message:
+        st.success(saved_message)
+
+    save_columns = st.columns([3, 1])
+    with save_columns[0]:
+        experiment_name = st.text_input(
+            "Experiment name",
+            value=f"{result.ticker} · {len(result.selected_factors)} factors",
+            key=f"experiment_name_{result.configuration_id}",
+            max_chars=80,
+        )
+    with save_columns[1]:
+        st.write("")
+        st.write("")
+        save_clicked = st.button(
+            "Save experiment",
+            icon=":material/bookmark_add:",
+            key=f"save_experiment_{result.configuration_id}",
+            width="stretch",
+        )
+    if save_clicked:
+        try:
+            experiment, _ = save_experiment(
+                result,
+                experiment_name,
+                EXPERIMENT_DIR,
+            )
+            st.session_state["experiment_saved_message"] = (
+                f"Saved {experiment.name} · run {experiment.configuration_id}."
+            )
+            st.rerun()
+        except Exception as exc:
+            st.error(str(exc))
+
+    experiments = list_experiments(EXPERIMENT_DIR)
+    if not experiments:
+        st.caption("No named experiments saved yet.")
+        return
+
+    experiment_lookup = {
+        item.experiment_id: item for item in experiments
+    }
+    current_matches = [
+        item.experiment_id
+        for item in experiments
+        if item.configuration_id == result.configuration_id
+    ]
+    default_ids = current_matches[:1]
+    default_ids.extend(
+        item.experiment_id
+        for item in experiments
+        if item.experiment_id not in default_ids
+    )
+    default_ids = default_ids[:2]
+    selected_ids = st.multiselect(
+        "Compare experiments",
+        options=list(experiment_lookup),
+        default=default_ids,
+        format_func=lambda experiment_id: comparison_label(
+            experiment_lookup[experiment_id]
+        ),
+        key=f"experiment_comparison_{result.configuration_id}",
+    )
+    selected = tuple(
+        experiment_lookup[experiment_id] for experiment_id in selected_ids
+    )
+    if len(selected) < 2:
+        st.caption("Select at least two saved experiments for comparison.")
+        return
+
+    for warning in comparison_warnings(selected):
+        st.warning(warning)
+
+    comparison = experiment_comparison_table(selected)
+    st.dataframe(
+        comparison.style.format(
+            {
+                "Expected excess return": "{:+.2%}",
+                "Expected-return delta vs first": "{:+.2%}",
+                "Probability positive": "{:.1%}",
+                "Probability delta vs first": "{:+.1%}",
+                "Interval width": "{:.2%}",
+                "Model reliability": "{:.0f}/100",
+                "Data quality": "{:.0f}/100",
+                "OOS R² vs zero": "{:+.2%}",
+                "Interval coverage": "{:.1%}",
+            }
+        ),
+        hide_index=True,
+        width="stretch",
+    )
+    contribution_comparison = experiment_contribution_table(selected)
+    st.plotly_chart(
+        experiment_contribution_chart(contribution_comparison),
+        width="stretch",
+        config={"displayModeBar": False},
+    )
+    st.download_button(
+        "Download comparison CSV",
+        data=comparison.to_csv(index=False).encode(),
+        file_name=f"experiment_comparison_{result.target_month}.csv",
+        mime="text/csv",
+        icon=":material/download:",
+    )
 
 
 def render_forecast_analyst_answer(answer: dict[str, object]) -> None:
@@ -324,28 +469,84 @@ benchmark_id = benchmark_ids[0] if len(benchmark_ids) == 1 else "Multiple benchm
 
 options = company_options(inference_panel)
 option_lookup = dict(options)
-default_index = next(
-    (index for index, (label, _) in enumerate(options) if label.startswith("GOOGL ·")),
-    0,
+company_label_by_permno = {
+    company_permno: label for label, company_permno in options
+}
+default_company = next(
+    (label for label, _ in options if label.startswith("GOOGL ·")),
+    options[0][0],
 )
+saved_experiments = list_experiments(EXPERIMENT_DIR)
 
 with st.sidebar:
     st.header("Forecast Configuration")
+    if saved_experiments:
+        saved_lookup = {
+            item.experiment_id: item for item in saved_experiments
+        }
+        saved_choice = st.selectbox(
+            "Saved configuration",
+            options=list(saved_lookup),
+            format_func=lambda experiment_id: comparison_label(
+                saved_lookup[experiment_id]
+            ),
+            key="saved_configuration_choice",
+        )
+        if st.button(
+            "Apply saved configuration",
+            icon=":material/settings_backup_restore:",
+            width="stretch",
+        ):
+            saved = saved_lookup[saved_choice]
+            saved_company = company_label_by_permno.get(saved.permno)
+            if saved_company is None:
+                st.error("The saved security is not in the current inference panel.")
+            elif saved.as_of_date != as_of.date().isoformat():
+                st.error(
+                    "The saved as-of date is not available in the current "
+                    "inference snapshot."
+                )
+            else:
+                st.session_state["forecast_company"] = saved_company
+                st.session_state["forecast_factors"] = list(saved.selected_factors)
+                st.session_state["forecast_interval"] = saved.interval_level
+                matching_preset = next(
+                    (
+                        name
+                        for name, factors in FACTOR_PRESETS.items()
+                        if tuple(factors) == tuple(saved.selected_factors)
+                    ),
+                    None,
+                )
+                st.session_state["forecast_preset"] = matching_preset
+                st.session_state["_last_forecast_preset"] = matching_preset
+                st.session_state.pop("excess_return_result", None)
+                st.session_state["applied_experiment_message"] = (
+                    f"Applied {saved.name} · run {saved.configuration_id}."
+                )
+                st.rerun()
+        st.divider()
+
+    st.session_state.setdefault("forecast_company", default_company)
     selected_company = st.selectbox(
         "Company",
         options=[label for label, _ in options],
-        index=default_index,
+        key="forecast_company",
     )
     permno = option_lookup[selected_company]
 
+    st.session_state.setdefault("forecast_preset", "Balanced")
     preset = st.segmented_control(
         "Factor preset",
         options=list(FACTOR_PRESETS),
-        default="Balanced",
+        key="forecast_preset",
         width="stretch",
     )
-    preset_key = preset or "Balanced"
-    if st.session_state.get("_last_forecast_preset") != preset_key:
+    preset_key = preset
+    if (
+        preset_key is not None
+        and st.session_state.get("_last_forecast_preset") != preset_key
+    ):
         st.session_state["forecast_factors"] = list(FACTOR_PRESETS[preset_key])
         st.session_state["_last_forecast_preset"] = preset_key
 
@@ -355,10 +556,11 @@ with st.sidebar:
         key="forecast_factors",
         format_func=factor_option_label,
     )
+    st.session_state.setdefault("forecast_interval", 0.80)
     interval_level = st.select_slider(
         "Prediction interval",
         options=[0.70, 0.80, 0.90],
-        value=0.80,
+        key="forecast_interval",
         format_func=lambda value: f"{value:.0%}",
     )
 
@@ -366,6 +568,10 @@ with st.sidebar:
     st.caption(f"As of {as_of.date().isoformat()}")
     st.caption(f"Target month {target_month.date().isoformat()}")
     st.caption(f"Benchmark {benchmark_id}")
+
+applied_message = st.session_state.pop("applied_experiment_message", None)
+if applied_message:
+    st.success(applied_message)
 
 quality = configuration_quality(
     training_panel,
@@ -700,6 +906,7 @@ with data_tab:
         f"Validation: {result.validation_version}"
     )
 
+render_experiment_workspace(result)
 render_forecast_analyst(result)
 
 st.download_button(

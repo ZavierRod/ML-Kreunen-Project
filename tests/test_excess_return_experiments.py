@@ -1,0 +1,128 @@
+import tempfile
+import unittest
+from datetime import UTC, datetime
+from types import SimpleNamespace
+
+from excess_return_engine.experiments import (
+    comparison_records,
+    comparison_warnings,
+    contribution_records,
+    list_experiments,
+    save_experiment,
+)
+
+
+def forecast_result(
+    *,
+    configuration_id: str = "run-a",
+    permno: int = 1,
+    factors: tuple[str, ...] = ("size",),
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        configuration_id=configuration_id,
+        permno=permno,
+        ticker="AAA",
+        company="Alpha",
+        as_of_date="2025-12-31",
+        target_month="2026-01-31",
+        benchmark_id="benchmark",
+        selected_factors=factors,
+        interval_level=0.8,
+        expected_excess_return=0.01,
+        probability_positive=0.55,
+        interval_lower=-0.05,
+        interval_upper=0.07,
+        reliability=SimpleNamespace(
+            model_reliability_score=65.0,
+            model_reliability_label="Moderate",
+            data_quality_score=79.0,
+            data_quality_label="Moderate",
+        ),
+        validation_metrics={
+            "oos_r2_vs_zero": 0.002,
+            "interval_coverage": 0.79,
+        },
+        contributions=tuple(
+            SimpleNamespace(factor_id=factor, contribution=0.001)
+            for factor in factors
+        ),
+        data_version="data-v1",
+        feature_version="feature-v1",
+        target_version="target-v1",
+        model_version="model-v1",
+        reliability_version="reliability-v1",
+        validation_version="validation-v1",
+    )
+
+
+class ExperimentTests(unittest.TestCase):
+    def test_save_and_list_are_idempotent_for_name_and_run(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+            first, first_path = save_experiment(
+                forecast_result(),
+                "Balanced baseline",
+                directory,
+                saved_at=timestamp,
+            )
+            second, second_path = save_experiment(
+                forecast_result(),
+                "  Balanced   baseline  ",
+                directory,
+                saved_at=timestamp,
+            )
+
+            self.assertEqual(first.experiment_id, second.experiment_id)
+            self.assertEqual(first_path, second_path)
+            listed = list_experiments(directory)
+            self.assertEqual(len(listed), 1)
+            self.assertEqual(listed[0].name, "Balanced baseline")
+            self.assertEqual(listed[0].selected_factors, ("size",))
+
+    def test_comparison_warns_on_incompatible_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            first, _ = save_experiment(
+                forecast_result(configuration_id="run-a", permno=1),
+                "First",
+                directory,
+            )
+            second, _ = save_experiment(
+                forecast_result(configuration_id="run-b", permno=2),
+                "Second",
+                directory,
+            )
+
+            warnings = comparison_warnings((first, second))
+
+            self.assertIn(
+                "Selected experiments use different company/security values.",
+                warnings,
+            )
+
+    def test_comparison_and_contribution_records_keep_run_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            experiment, _ = save_experiment(
+                forecast_result(factors=("size", "momentum_12_1")),
+                "Two factors",
+                directory,
+            )
+
+            comparison = comparison_records((experiment,))
+            contributions = contribution_records((experiment,))
+
+            self.assertEqual(comparison[0]["Run ID"], "run-a")
+            self.assertEqual(comparison[0]["Factors"], 2)
+            self.assertEqual(
+                comparison[0]["Expected-return delta vs first"],
+                0.0,
+            )
+            self.assertEqual(len(contributions), 2)
+
+    def test_invalid_name_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "name is required"):
+                save_experiment(forecast_result(), " ", directory)
+
+
+if __name__ == "__main__":
+    unittest.main()

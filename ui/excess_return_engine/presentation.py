@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import pandas as pd
 
+from excess_return_engine.experiments import (
+    SavedExperiment,
+    comparison_records,
+    contribution_records,
+)
 from excess_return_engine.features import FACTOR_REGISTRY
 from excess_return_engine.model import ForecastResult
 
@@ -256,6 +261,31 @@ def yearly_validation_table(result: ForecastResult) -> pd.DataFrame:
             for item in result.validation_diagnostics.yearly_metrics
         ]
     )
+
+
+def experiment_comparison_table(
+    experiments: tuple[SavedExperiment, ...],
+) -> pd.DataFrame:
+    table = pd.DataFrame(comparison_records(experiments))
+    if table.empty:
+        return table
+    table["Factor set"] = [
+        ", ".join(FACTOR_REGISTRY[factor].label for factor in item.selected_factors)
+        for item in experiments
+    ]
+    return table
+
+
+def experiment_contribution_table(
+    experiments: tuple[SavedExperiment, ...],
+) -> pd.DataFrame:
+    table = pd.DataFrame(contribution_records(experiments))
+    if table.empty:
+        return table
+    table["Factor"] = table["Factor ID"].map(
+        lambda factor: FACTOR_REGISTRY[factor].label
+    )
+    return table
 
 
 def predictive_strength_label(metrics: dict[str, float | int]) -> str:
