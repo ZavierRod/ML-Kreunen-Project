@@ -88,6 +88,22 @@ python -m excess_return_engine.model \
             profit_margin roe ev_ebitda size
 ```
 
+Use a trailing training window when the research question should emphasize more
+recent regimes:
+
+```bash
+python -m excess_return_engine.model \
+  --permno 90319 \
+  --factors momentum_12_1 volatility_21d asset_growth leverage \
+  --training-window-months 120
+```
+
+The window is measured in distinct calendar months immediately before the as-of
+date. It must leave enough history for the 60-month minimum fit, 12-month tuning,
+and 48-month calibration/evaluation splits. The default remains all eligible
+history. The requested window is part of the configuration ID and model record, so
+otherwise identical 10-year and expanding-history forecasts are separate runs.
+
 The command prints and saves:
 
 - Expected one-month excess return
@@ -167,7 +183,7 @@ saved experiment contains the configuration and compact forecast summary needed 
 restore and compare a run:
 
 - Permanent security ID, display ticker, company name, and as-of date
-- Selected factor IDs, interval level, target, and benchmark
+- Selected factor IDs, training window, interval level, target, and benchmark
 - Expected excess return, positive-return probability, interval, and quality scores
 - Factor contributions and model, feature, target, and data version IDs
 
@@ -183,9 +199,10 @@ benchmark, or data version so comparisons are not presented as equivalent when
 their underlying contracts differ.
 
 Applying a saved configuration restores its company, factor set, and prediction
-interval. The current research UI can restore only an as-of date present in the
-loaded inference snapshot; older snapshots must first be loaded through
-`EXCESS_RETURN_ARTIFACT_DIR`.
+interval, including the training window. Version 1 experiment manifests load as
+all-available-history configurations; new saves use version 2. The current research
+UI can restore only an as-of date present in the loaded inference snapshot; older
+snapshots must first be loaded through `EXCESS_RETURN_ARTIFACT_DIR`.
 
 ## Ask the Forecast
 

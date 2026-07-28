@@ -35,7 +35,7 @@ from .validation import (
     build_validation_diagnostics,
 )
 
-MODEL_VERSION = "elastic-net-panel-v1"
+MODEL_VERSION = "elastic-net-panel-v2"
 TARGET_VERSION = "calendar-excess-return-v1"
 TARGET_COLUMN = "excess_return_next_month"
 MONTH_COLUMN = "month_end"
@@ -48,6 +48,7 @@ class ForecastRequest:
     selected_factors: tuple[str, ...]
     as_of_date: str | None = None
     interval_level: float = 0.80
+    training_window_months: int | None = None
     tuning_months: int = 12
     calibration_months: int = 48
     minimum_training_months: int = 60
@@ -61,6 +62,11 @@ class ForecastRequest:
         validate_factor_selection(self.selected_factors)
         if not 0 < self.interval_level < 1:
             raise ValueError("interval_level must be between 0 and 1")
+        if (
+            self.training_window_months is not None
+            and self.training_window_months < 1
+        ):
+            raise ValueError("training_window_months must be positive")
         if self.tuning_months < 1 or self.calibration_months < 4:
             raise ValueError("tuning_months must be positive and calibration_months >= 4")
         if self.maximum_tuning_rows < 1:
@@ -102,6 +108,7 @@ class ForecastResult:
     target_month: str
     benchmark_id: str
     selected_factors: tuple[str, ...]
+    training_window_months: int | None
     expected_excess_return: float
     probability_positive: float
     interval_level: float
@@ -347,6 +354,7 @@ def _configuration_id(
         "benchmark_id": benchmark_id,
         "data_version": data_version,
         "interval_level": request.interval_level,
+        "training_window_months": request.training_window_months,
         "tuning_months": request.tuning_months,
         "calibration_months": request.calibration_months,
         "minimum_training_months": request.minimum_training_months,
@@ -400,6 +408,36 @@ def generate_forecast(
     if historical.empty:
         raise ValueError("No historical labels are available before the as-of date.")
 
+    required_months = (
+        request.minimum_training_months
+        + request.tuning_months
+        + request.calibration_months
+    )
+    available_months = np.array(sorted(historical[MONTH_COLUMN].unique()))
+    if (
+        request.training_window_months is not None
+        and request.training_window_months < required_months
+    ):
+        raise ValueError(
+            f"Training window must include at least {required_months} months "
+            "for fitting, tuning, and calibration."
+        )
+    if (
+        request.training_window_months is not None
+        and request.training_window_months > len(available_months)
+    ):
+        raise ValueError(
+            f"Requested {request.training_window_months} training months; "
+            f"only {len(available_months)} are available before the as-of date."
+        )
+    if request.training_window_months is not None:
+        retained_months = set(
+            available_months[-request.training_window_months :]
+        )
+        historical = historical[
+            historical[MONTH_COLUMN].isin(retained_months)
+        ].copy()
+
     ranked_historical, ranked_current = _normalized_model_frames(
         historical,
         inference[inference[MONTH_COLUMN] == as_of],
@@ -410,11 +448,6 @@ def generate_forecast(
         raise ValueError("The normalized inference cross-section is not unique.")
 
     months = np.array(sorted(ranked_historical[MONTH_COLUMN].unique()))
-    required_months = (
-        request.minimum_training_months
-        + request.tuning_months
-        + request.calibration_months
-    )
     if len(months) < required_months:
         raise ValueError(
             f"Configuration requires at least {required_months} historical months; "
@@ -600,6 +633,7 @@ def generate_forecast(
         target_month=pd.Timestamp(current["target_month"]).date().isoformat(),
         benchmark_id=current_benchmark,
         selected_factors=selected,
+        training_window_months=request.training_window_months,
         expected_excess_return=point_forecast,
         probability_positive=probability_positive,
         interval_level=request.interval_level,
@@ -665,6 +699,7 @@ def main() -> None:
     )
     parser.add_argument("--as-of-date")
     parser.add_argument("--interval-level", type=float, default=0.80)
+    parser.add_argument("--training-window-months", type=int)
     args = parser.parse_args()
 
     training = pd.read_parquet(Path(args.training_panel).expanduser().resolve())
@@ -674,6 +709,7 @@ def main() -> None:
         selected_factors=tuple(args.factors),
         as_of_date=args.as_of_date,
         interval_level=args.interval_level,
+        training_window_months=args.training_window_months,
     )
     result = generate_forecast(training, inference, request)
     output_path = save_forecast_result(result, args.output_dir)

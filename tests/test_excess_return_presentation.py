@@ -210,6 +210,7 @@ class PresentationTests(unittest.TestCase):
             ticker="AAA",
             permno=1,
             selected_factors=("size",),
+            training_window_months=None,
             expected_excess_return=0.01,
             probability_positive=0.55,
             interval_lower=-0.05,

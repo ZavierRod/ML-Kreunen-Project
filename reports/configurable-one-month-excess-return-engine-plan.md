@@ -92,6 +92,15 @@ Implementation status:
 - Experiment manifests remain in ignored local storage and contain configuration,
   forecast summaries, contributions, and version IDs only. They exclude raw WRDS
   rows, historical analog rows, API credentials, and licensed source files.
+- Configurable trailing training windows are implemented across the model, UI,
+  analyst context, configuration hash, and saved experiments. Users can compare all
+  eligible history with 10-year and 12-year windows; the engine blocks windows that
+  cannot preserve the required fit, tuning, and calibration splits.
+- A browser-verified 10-year GOOGL run used exactly 120 months, produced run ID
+  `f7b836c95eb0a7af`, and remained responsive without horizontal overflow at a
+  390-pixel mobile width. Its expected excess return was `-0.3%`, with `47.3%`
+  positive probability, an 80% interval of `-13.3%` to `+12.5%`, and `65/100`
+  model reliability.
 - Delisting-return and actual fundamental-availability-date audits remain open.
 
 ## 1. Feature Summary

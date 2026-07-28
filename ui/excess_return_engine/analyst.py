@@ -239,6 +239,11 @@ def build_forecast_context(
             "target_month": result.target_month,
             "benchmark_id": result.benchmark_id,
             "selected_factors": list(result.selected_factors),
+            "training_window_months": getattr(
+                result,
+                "training_window_months",
+                None,
+            ),
             "model_version": result.model_version,
             "feature_version": result.feature_version,
             "target_version": result.target_version,

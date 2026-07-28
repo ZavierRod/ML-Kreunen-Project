@@ -10,7 +10,11 @@ from pathlib import Path
 
 from .model import ForecastResult
 
-EXPERIMENT_VERSION = "saved-experiment-v1"
+EXPERIMENT_VERSION = "saved-experiment-v2"
+SUPPORTED_EXPERIMENT_VERSIONS = {
+    "saved-experiment-v1",
+    EXPERIMENT_VERSION,
+}
 MAX_EXPERIMENT_NAME_LENGTH = 80
 
 
@@ -34,6 +38,7 @@ class SavedExperiment:
     target_month: str
     benchmark_id: str
     selected_factors: tuple[str, ...]
+    training_window_months: int | None
     interval_level: float
     expected_excess_return: float
     probability_positive: float
@@ -85,6 +90,7 @@ def save_experiment(
         target_month=result.target_month,
         benchmark_id=result.benchmark_id,
         selected_factors=tuple(result.selected_factors),
+        training_window_months=result.training_window_months,
         interval_level=float(result.interval_level),
         expected_excess_return=float(result.expected_excess_return),
         probability_positive=float(result.probability_positive),
@@ -153,6 +159,7 @@ def comparison_warnings(
         ("as_of_date", "as-of date"),
         ("target_month", "target month"),
         ("benchmark_id", "benchmark"),
+        ("training_window_months", "training window"),
         ("data_version", "data version"),
     )
     warnings = []
@@ -178,6 +185,11 @@ def comparison_records(
             "Ticker": item.ticker or "N/A",
             "Factors": len(item.selected_factors),
             "Factor set": ", ".join(item.selected_factors),
+            "Training window": (
+                "All available"
+                if item.training_window_months is None
+                else f"{item.training_window_months} months"
+            ),
             "Expected excess return": item.expected_excess_return,
             "Expected-return delta vs first": (
                 item.expected_excess_return - baseline_return
@@ -243,7 +255,7 @@ def _experiment_id(name: str, configuration_id: str) -> str:
 
 def _experiment_from_dict(payload: dict[str, object]) -> SavedExperiment:
     required_version = payload.get("experiment_version")
-    if required_version != EXPERIMENT_VERSION:
+    if required_version not in SUPPORTED_EXPERIMENT_VERSIONS:
         raise ValueError(
             f"Unsupported experiment version: {required_version!r}."
         )
@@ -260,6 +272,11 @@ def _experiment_from_dict(payload: dict[str, object]) -> SavedExperiment:
         target_month=str(payload["target_month"]),
         benchmark_id=str(payload["benchmark_id"]),
         selected_factors=tuple(str(item) for item in payload["selected_factors"]),
+        training_window_months=(
+            None
+            if payload.get("training_window_months") is None
+            else int(payload["training_window_months"])
+        ),
         interval_level=float(payload["interval_level"]),
         expected_excess_return=float(payload["expected_excess_return"]),
         probability_positive=float(payload["probability_positive"]),

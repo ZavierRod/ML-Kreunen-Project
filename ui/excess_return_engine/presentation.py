@@ -75,6 +75,8 @@ def configuration_quality(
     inference: pd.DataFrame,
     permno: int,
     selected_factors: tuple[str, ...],
+    training_window_months: int | None = None,
+    minimum_required_months: int = 120,
 ) -> dict[str, object]:
     if not selected_factors:
         return {
@@ -98,7 +100,16 @@ def configuration_quality(
             "correlated_pairs": (),
         }
 
-    relevant = training.dropna(subset=["excess_return_next_month"])
+    relevant = training.dropna(subset=["excess_return_next_month"]).copy()
+    available_months = sorted(pd.to_datetime(relevant["month_end"]).unique())
+    if (
+        training_window_months is not None
+        and training_window_months <= len(available_months)
+    ):
+        retained_months = set(available_months[-training_window_months:])
+        relevant = relevant[
+            pd.to_datetime(relevant["month_end"]).isin(retained_months)
+        ]
     current_completeness = float(
         current.iloc[0][list(selected_factors)].notna().mean()
     )
@@ -117,9 +128,21 @@ def configuration_quality(
                 )
     status = "ready"
     message = "Configuration passes the research minimums."
-    if training_months < 96:
+    if (
+        training_window_months is not None
+        and training_window_months > len(available_months)
+    ):
         status = "blocked"
-        message = "At least 96 historical months are required."
+        message = (
+            f"Only {len(available_months)} historical months are available "
+            f"for the requested {training_window_months}-month window."
+        )
+    elif training_months < minimum_required_months:
+        status = "blocked"
+        message = (
+            f"At least {minimum_required_months} historical months are "
+            "required for fitting, tuning, and calibration."
+        )
     elif current_completeness < 0.75:
         status = "blocked"
         message = "Current selected-factor completeness must be at least 75%."

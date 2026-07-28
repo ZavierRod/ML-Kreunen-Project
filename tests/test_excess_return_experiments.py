@@ -1,6 +1,8 @@
+import json
 import tempfile
 import unittest
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 from excess_return_engine.experiments import (
@@ -27,6 +29,7 @@ def forecast_result(
         target_month="2026-01-31",
         benchmark_id="benchmark",
         selected_factors=factors,
+        training_window_months=None,
         interval_level=0.8,
         expected_excess_return=0.01,
         probability_positive=0.55,
@@ -78,6 +81,7 @@ class ExperimentTests(unittest.TestCase):
             self.assertEqual(len(listed), 1)
             self.assertEqual(listed[0].name, "Balanced baseline")
             self.assertEqual(listed[0].selected_factors, ("size",))
+            self.assertIsNone(listed[0].training_window_months)
 
     def test_comparison_warns_on_incompatible_scope(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -122,6 +126,23 @@ class ExperimentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(ValueError, "name is required"):
                 save_experiment(forecast_result(), " ", directory)
+
+    def test_v1_manifest_loads_as_all_available_history(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            experiment, path = save_experiment(
+                forecast_result(),
+                "Legacy",
+                directory,
+            )
+            payload = experiment.to_dict()
+            payload["experiment_version"] = "saved-experiment-v1"
+            payload.pop("training_window_months")
+            Path(path).write_text(json.dumps(payload), encoding="utf-8")
+
+            listed = list_experiments(directory)
+
+            self.assertEqual(len(listed), 1)
+            self.assertIsNone(listed[0].training_window_months)
 
 
 if __name__ == "__main__":

@@ -136,6 +136,7 @@ class ForecastTests(unittest.TestCase):
 
         self.assertEqual(result.permno, 3)
         self.assertEqual(result.selected_factors, ("size", "momentum_12_1"))
+        self.assertIsNone(result.training_window_months)
         self.assertEqual(
             {item.factor_id for item in result.contributions},
             {"size", "momentum_12_1"},
@@ -168,6 +169,53 @@ class ForecastTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(ValueError, "historical months"):
+            generate_forecast(training, inference, request)
+
+    def test_forecast_uses_requested_trailing_training_window(self) -> None:
+        training, inference = synthetic_panels()
+        request = ForecastRequest(
+            permno=3,
+            selected_factors=("size",),
+            training_window_months=72,
+            tuning_months=6,
+            calibration_months=12,
+            minimum_training_months=48,
+            alpha_grid=(0.0001,),
+            l1_ratio_grid=(0.5,),
+        )
+
+        result = generate_forecast(training, inference, request)
+
+        self.assertEqual(result.training_window_months, 72)
+        self.assertEqual(result.data_quality["training_months"], 72)
+        self.assertIn("months-2016-12-31-to-2022-11-30", result.data_version)
+
+    def test_training_window_must_cover_model_splits(self) -> None:
+        training, inference = synthetic_panels()
+        request = ForecastRequest(
+            permno=3,
+            selected_factors=("size",),
+            training_window_months=71,
+            tuning_months=6,
+            calibration_months=12,
+            minimum_training_months=54,
+        )
+
+        with self.assertRaisesRegex(ValueError, "at least 72 months"):
+            generate_forecast(training, inference, request)
+
+    def test_training_window_cannot_exceed_available_history(self) -> None:
+        training, inference = synthetic_panels()
+        request = ForecastRequest(
+            permno=3,
+            selected_factors=("size",),
+            training_window_months=96,
+            tuning_months=6,
+            calibration_months=12,
+            minimum_training_months=48,
+        )
+
+        with self.assertRaisesRegex(ValueError, "only 95 are available"):
             generate_forecast(training, inference, request)
 
 

@@ -55,6 +55,8 @@ ARTIFACT_DIR = Path(
     os.getenv("EXCESS_RETURN_ARTIFACT_DIR", str(DEFAULT_ARTIFACT_DIR))
 ).expanduser()
 EXPERIMENT_DIR = ARTIFACT_DIR / "experiments"
+ALL_HISTORY_OPTION = "all_available"
+TRAINING_WINDOW_OPTIONS = (ALL_HISTORY_OPTION, 120, 144)
 
 st.set_page_config(
     page_title="One-Month Excess Return",
@@ -95,6 +97,13 @@ def format_percent(value: float, digits: int = 1) -> str:
 
 def format_probability(value: float) -> str:
     return f"{value * 100:.1f}%"
+
+
+def format_training_window(value: int | str | None) -> str:
+    if value is None or value == ALL_HISTORY_OPTION:
+        return "All available"
+    months = int(value)
+    return f"{months // 12} years · {months} months"
 
 
 def contribution_chart(table: pd.DataFrame) -> go.Figure:
@@ -477,6 +486,17 @@ default_company = next(
     options[0][0],
 )
 saved_experiments = list_experiments(EXPERIMENT_DIR)
+available_training_months = int(
+    training_panel.loc[
+        pd.to_datetime(training_panel["month_end"]) < as_of,
+        "month_end",
+    ].nunique()
+)
+training_window_options = tuple(
+    option
+    for option in TRAINING_WINDOW_OPTIONS
+    if option == ALL_HISTORY_OPTION or int(option) <= available_training_months
+)
 
 with st.sidebar:
     st.header("Forecast Configuration")
@@ -506,10 +526,23 @@ with st.sidebar:
                     "The saved as-of date is not available in the current "
                     "inference snapshot."
                 )
+            elif (
+                saved.training_window_months is not None
+                and saved.training_window_months not in training_window_options
+            ):
+                st.error(
+                    "The saved training window is not available in the "
+                    "current research panel."
+                )
             else:
                 st.session_state["forecast_company"] = saved_company
                 st.session_state["forecast_factors"] = list(saved.selected_factors)
                 st.session_state["forecast_interval"] = saved.interval_level
+                st.session_state["forecast_training_window"] = (
+                    ALL_HISTORY_OPTION
+                    if saved.training_window_months is None
+                    else saved.training_window_months
+                )
                 matching_preset = next(
                     (
                         name
@@ -563,6 +596,21 @@ with st.sidebar:
         key="forecast_interval",
         format_func=lambda value: f"{value:.0%}",
     )
+    st.session_state.setdefault(
+        "forecast_training_window",
+        ALL_HISTORY_OPTION,
+    )
+    selected_training_window = st.selectbox(
+        "Training window",
+        options=training_window_options,
+        key="forecast_training_window",
+        format_func=format_training_window,
+    )
+    training_window_months = (
+        None
+        if selected_training_window == ALL_HISTORY_OPTION
+        else int(selected_training_window)
+    )
 
     st.divider()
     st.caption(f"As of {as_of.date().isoformat()}")
@@ -578,6 +626,7 @@ quality = configuration_quality(
     inference_panel,
     permno,
     tuple(selected_factors),
+    training_window_months=training_window_months,
 )
 
 config_columns = st.columns(4)
@@ -614,6 +663,7 @@ if run_forecast:
         permno=permno,
         selected_factors=tuple(selected_factors),
         interval_level=interval_level,
+        training_window_months=training_window_months,
     )
     with st.spinner("Fitting selected-factor model and calibrating uncertainty..."):
         try:
@@ -640,6 +690,7 @@ result_matches_configuration = (
     and result.permno == permno
     and result.selected_factors == tuple(selected_factors)
     and result.interval_level == interval_level
+    and getattr(result, "training_window_months", None) == training_window_months
 )
 if not result_matches_configuration:
     st.subheader("Configuration")
@@ -683,7 +734,9 @@ headline[3].metric(
 
 st.caption(
     f"Benchmark: {result.benchmark_id} · As of: {result.as_of_date} · "
-    f"Target: {result.target_month} · Run: {result.configuration_id}"
+    f"Target: {result.target_month} · Training: "
+    f"{format_training_window(getattr(result, 'training_window_months', None))} · "
+    f"Run: {result.configuration_id}"
 )
 
 contributions = contribution_table(result)
