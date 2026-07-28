@@ -34,6 +34,7 @@ from excess_return_engine.replay import (
     realized_replay_outcome,
 )
 from excess_return_engine.runs import RUN_ARTIFACT_VERSION, execute_forecast
+from excess_return_engine.universes import universe_options
 from ui.excess_return_engine import analyst
 from ui.excess_return_engine.presentation import (
     FACTOR_PRESETS,
@@ -535,6 +536,11 @@ benchmark_lookup = {
     definition.benchmark_id: definition
     for definition in benchmark_definitions
 }
+universe_definitions = universe_options()
+universe_lookup = {
+    definition.universe_id: definition
+    for definition in universe_definitions
+}
 
 options = company_options(inference_snapshot)
 option_lookup = dict(options)
@@ -613,6 +619,13 @@ with st.sidebar:
                         "research panels."
                     )
                 elif (
+                    saved.universe_id is not None
+                    and saved.universe_id not in universe_lookup
+                ):
+                    st.error(
+                        "The saved training universe is not available."
+                    )
+                elif (
                     saved.training_window_months is not None
                     and saved.training_window_months > saved_available_months
                 ):
@@ -649,6 +662,15 @@ with st.sidebar:
         options=list(benchmark_lookup),
         key="forecast_benchmark",
         format_func=lambda item: benchmark_lookup[item].label,
+    )
+    st.session_state.setdefault("forecast_universe", "all-covered")
+    if st.session_state["forecast_universe"] not in universe_lookup:
+        st.session_state["forecast_universe"] = "all-covered"
+    universe_id = st.selectbox(
+        "Training universe",
+        options=list(universe_lookup),
+        key="forecast_universe",
+        format_func=lambda item: universe_lookup[item].label,
     )
 
     st.session_state.setdefault("forecast_preset", "Balanced")
@@ -709,6 +731,7 @@ with st.sidebar:
     st.caption(f"As of {as_of.date().isoformat()}")
     st.caption(f"Target month {target_month.date().isoformat()}")
     st.caption(benchmark_lookup[benchmark_id].method)
+    st.caption(universe_lookup[universe_id].method)
 
 applied_message = st.session_state.pop("applied_experiment_message", None)
 if applied_message:
@@ -721,16 +744,21 @@ quality = configuration_quality(
     tuple(selected_factors),
     training_window_months=training_window_months,
     as_of_date=as_of,
+    universe_id=universe_id,
 )
 
-config_columns = st.columns(4)
+config_columns = st.columns(5)
 config_columns[0].metric("Selected factors", len(selected_factors))
 config_columns[1].metric("Training months", int(quality["training_months"]))
 config_columns[2].metric(
+    "Universe rows",
+    f"{int(quality['training_rows']):,}",
+)
+config_columns[3].metric(
     "Current completeness",
     format_probability(float(quality["current_completeness"])),
 )
-config_columns[3].metric(
+config_columns[4].metric(
     "Historical coverage",
     format_probability(float(quality["historical_coverage"])),
 )
@@ -767,6 +795,7 @@ if run_forecast:
         permno=permno,
         selected_factors=tuple(selected_factors),
         benchmark_id=benchmark_id,
+        universe_id=universe_id,
         as_of_date=as_of.date().isoformat(),
         interval_level=interval_level,
         training_window_months=training_window_months,
@@ -806,6 +835,7 @@ result_matches_configuration = (
     and result.permno == permno
     and result.selected_factors == tuple(selected_factors)
     and result.benchmark_id == benchmark_id
+    and result.universe.universe_id == universe_id
     and result.as_of_date == as_of.date().isoformat()
     and result.snapshot_source
     == inference_snapshot.attrs["snapshot_source"]
@@ -868,6 +898,13 @@ st.caption(
 st.caption(
     f"Benchmark method: {result.benchmark.method} "
     f"Limitation: {result.benchmark.limitation}"
+)
+st.caption(
+    f"Training universe: {result.universe.label} · "
+    f"{result.universe.retained_rows:,} of "
+    f"{result.universe.input_rows:,} rows retained "
+    f"({result.universe.retained_share:.1%}). "
+    f"{result.universe.limitation}"
 )
 execution_metadata = st.session_state.get("forecast_execution_metadata")
 if (
@@ -1292,6 +1329,7 @@ with data_tab:
         f"Lineage: {result.lineage_version} · "
         f"Audit: {result.audit_version} · "
         f"Benchmarks: {result.benchmark_version} · "
+        f"Universes: {result.universe_version} · "
         f"Challengers: {result.challenger_version} · "
         f"Replay: {result.replay_version or 'not applicable'}"
     )

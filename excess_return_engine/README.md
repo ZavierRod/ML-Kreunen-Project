@@ -139,6 +139,39 @@ index series. The equal-weight variant uses securities represented in the labele
 panel, so unresolved or newly listed rows may be absent. This limitation is shown
 in the UI and analyst context.
 
+## Training-universe selection
+
+The model-training sample can be changed independently of the benchmark. The
+versioned choices in `excess_return_engine/universes.py` are:
+
+- `all-covered`: every eligible labeled security-month in the selected window
+- `large-liquid-research`: each month, require positive market capitalization,
+  an absolute month-end price of at least $5, at least 15 observed trading days,
+  and market capitalization at or above that month's eligible median
+
+The large/liquid screen uses only fields observed in the factor month. It is a
+transparent research investability screen, not membership in an official index
+and not a transaction-cost or capacity estimate. The benchmark is still calculated
+from the full covered universe, and registered factor ranks remain normalized
+against the full monthly cross-section. Only the historical rows supplied to model
+fitting, tuning, calibration, validation, analog selection, and walk-forward
+evaluation are filtered.
+
+Select the screen from Streamlit or the CLI:
+
+```bash
+python -m excess_return_engine.model \
+  --permno 90319 \
+  --factors momentum_12_1 volatility_21d asset_growth leverage \
+  --universe-id large-liquid-research \
+  --training-window-months 120
+```
+
+The universe definition, version, method, limitation, input rows, retained rows,
+retained share, month count, and security count are stored with each forecast.
+Universe selection is also included in the immutable configuration ID, saved
+experiments, preflight checks, UI evidence, and LLM analyst context.
+
 ## Immutable run cache
 
 `excess_return_engine/runs.py` stores each completed forecast as a versioned,
@@ -158,6 +191,7 @@ model again. Every artifact records:
 - Python, numpy, pandas, and scikit-learn versions
 - Data-content fingerprint and all engine service versions
 - Selected benchmark definition and benchmark-registry version
+- Selected training-universe definition, diagnostics, and registry version
 - Forecast, coefficients, normalized inputs, contributions, uncertainty,
   reliability, validation, challenger, regime, analog evidence, and per-factor
   source lineage

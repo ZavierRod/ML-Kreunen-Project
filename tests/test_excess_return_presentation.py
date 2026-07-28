@@ -41,6 +41,7 @@ class PresentationTests(unittest.TestCase):
             name="Historical replay",
             configuration_id="abc123",
             benchmark_id="benchmark",
+            universe_id="large-liquid-research",
         )
 
         queue_saved_configuration(state, saved, "GOOGL · Alphabet")
@@ -50,6 +51,10 @@ class PresentationTests(unittest.TestCase):
         self.assertEqual(state["forecast_as_of"], "2024-12-31")
         self.assertEqual(state["forecast_training_window"], 120)
         self.assertEqual(state["forecast_benchmark"], "benchmark")
+        self.assertEqual(
+            state["forecast_universe"],
+            "large-liquid-research",
+        )
         self.assertEqual(
             state["forecast_factors"],
             ["size", "momentum_12_1"],
@@ -161,6 +166,49 @@ class PresentationTests(unittest.TestCase):
         self.assertEqual(quality["training_months"], 120)
         self.assertEqual(quality["training_rows"], 120)
         self.assertEqual(quality["factor_lineage"].status, "Verified")
+
+    def test_configuration_quality_applies_selected_training_universe(self) -> None:
+        months = pd.date_range("2015-01-31", periods=120, freq="ME")
+        training = pd.DataFrame(
+            [
+                {
+                    "month_end": month,
+                    "permno": permno,
+                    "size": float(permno),
+                    "market_cap": market_cap,
+                    "dlyprc": price,
+                    "n_days": trading_days,
+                    "excess_return_next_month": 0.01,
+                }
+                for month in months
+                for permno, market_cap, price, trading_days in (
+                    (1, 10.0, 4.0, 21),
+                    (2, 20.0, 10.0, 21),
+                    (3, 30.0, 15.0, 21),
+                )
+            ]
+        )
+        inference = pd.DataFrame([{"permno": 3, "size": 3.0}])
+
+        quality = configuration_quality(
+            training,
+            inference,
+            3,
+            ("size",),
+            universe_id="large-liquid-research",
+        )
+
+        self.assertEqual(quality["status"], "ready")
+        self.assertEqual(quality["training_rows"], 240)
+        self.assertEqual(quality["training_months"], 120)
+        self.assertEqual(
+            quality["training_universe"].universe_id,
+            "large-liquid-research",
+        )
+        self.assertAlmostEqual(
+            quality["training_universe"].retained_share,
+            2 / 3,
+        )
 
     def test_factor_lineage_table_exposes_source_evidence(self) -> None:
         result = SimpleNamespace(

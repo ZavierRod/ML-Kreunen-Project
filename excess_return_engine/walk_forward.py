@@ -351,6 +351,8 @@ def _target_month(
 def _rank_ic(actual: np.ndarray, predicted: np.ndarray) -> float | None:
     actual_rank = pd.Series(actual).rank(method="average")
     predicted_rank = pd.Series(predicted).rank(method="average")
+    if actual_rank.nunique() < 2 or predicted_rank.nunique() < 2:
+        return None
     correlation = actual_rank.corr(predicted_rank)
     if pd.isna(correlation):
         return None

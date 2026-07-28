@@ -264,6 +264,44 @@ def build_forecast_context(
                     "Not recorded.",
                 ),
             },
+            "training_universe": {
+                "version": getattr(result, "universe_version", None),
+                "id": getattr(
+                    getattr(result, "universe", None),
+                    "universe_id",
+                    "not-recorded",
+                ),
+                "label": getattr(
+                    getattr(result, "universe", None),
+                    "label",
+                    "Not recorded",
+                ),
+                "method": getattr(
+                    getattr(result, "universe", None),
+                    "method",
+                    "Not recorded.",
+                ),
+                "limitation": getattr(
+                    getattr(result, "universe", None),
+                    "limitation",
+                    "Not recorded.",
+                ),
+                "input_rows": getattr(
+                    getattr(result, "universe", None),
+                    "input_rows",
+                    None,
+                ),
+                "retained_rows": getattr(
+                    getattr(result, "universe", None),
+                    "retained_rows",
+                    None,
+                ),
+                "retained_share": getattr(
+                    getattr(result, "universe", None),
+                    "retained_share",
+                    None,
+                ),
+            },
             "selected_factors": list(result.selected_factors),
             "training_window_months": getattr(
                 result,

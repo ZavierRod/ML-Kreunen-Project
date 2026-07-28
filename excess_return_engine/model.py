@@ -51,6 +51,11 @@ from .reliability import (
     assess_reliability,
 )
 from .replay import REPLAY_VERSION
+from .universes import (
+    UNIVERSE_VERSION,
+    TrainingUniverseSelection,
+    apply_training_universe,
+)
 from .validation import (
     VALIDATION_VERSION,
     ValidationDiagnostics,
@@ -62,7 +67,7 @@ from .walk_forward import (
     evaluate_walk_forward,
 )
 
-MODEL_VERSION = "elastic-net-panel-v9"
+MODEL_VERSION = "elastic-net-panel-v10"
 TARGET_VERSION = "calendar-excess-return-v1"
 TARGET_COLUMN = "excess_return_next_month"
 MONTH_COLUMN = "month_end"
@@ -74,6 +79,7 @@ class ForecastRequest:
     permno: int
     selected_factors: tuple[str, ...]
     benchmark_id: str | None = None
+    universe_id: str | None = None
     as_of_date: str | None = None
     interval_level: float = 0.80
     training_window_months: int | None = None
@@ -135,6 +141,7 @@ class ForecastResult:
     lineage_version: str
     audit_version: str
     benchmark_version: str
+    universe_version: str
     feature_version: str
     target_version: str
     data_version: str
@@ -146,6 +153,7 @@ class ForecastResult:
     target_month: str
     benchmark_id: str
     benchmark: BenchmarkSelection
+    universe: TrainingUniverseSelection
     selected_factors: tuple[str, ...]
     training_window_months: int | None
     expected_excess_return: float
@@ -196,6 +204,7 @@ class _ForecastScope:
     snapshot_source: str
     benchmark_id: str
     benchmark: BenchmarkSelection
+    universe: TrainingUniverseSelection
     data_version: str
     panel_audit: PanelAudit
 
@@ -443,6 +452,7 @@ def _configuration_id(
         "lineage_version": LINEAGE_VERSION,
         "audit_version": AUDIT_VERSION,
         "benchmark_version": BENCHMARK_VERSION,
+        "universe_version": UNIVERSE_VERSION,
         "runtime_versions": runtime_versions(),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
@@ -603,6 +613,10 @@ def _prepare_forecast_scope(
         historical = historical[
             historical[MONTH_COLUMN].isin(retained_months)
         ].copy()
+    historical, universe = apply_training_universe(
+        historical,
+        request.universe_id,
+    )
 
     benchmark_ids = historical["benchmark_id"].dropna().astype(str).unique()
     current_benchmark = str(current["benchmark_id"])
@@ -625,6 +639,7 @@ def _prepare_forecast_scope(
         snapshot_source=snapshot_source,
         benchmark_id=current_benchmark,
         benchmark=benchmark,
+        universe=universe,
         data_version=_scope_data_version(
             historical,
             inference_cross_section,
@@ -899,6 +914,7 @@ def generate_forecast_computation(
         lineage_version=LINEAGE_VERSION,
         audit_version=AUDIT_VERSION,
         benchmark_version=BENCHMARK_VERSION,
+        universe_version=UNIVERSE_VERSION,
         feature_version=FEATURE_VERSION,
         target_version=TARGET_VERSION,
         data_version=scope.data_version,
@@ -910,6 +926,7 @@ def generate_forecast_computation(
         target_month=pd.Timestamp(current["target_month"]).date().isoformat(),
         benchmark_id=scope.benchmark_id,
         benchmark=scope.benchmark,
+        universe=scope.universe,
         selected_factors=selected,
         training_window_months=request.training_window_months,
         expected_excess_return=point_forecast,
@@ -982,6 +999,7 @@ def main() -> None:
     parser.add_argument("--permno", type=int, required=True)
     parser.add_argument("--factors", nargs="+", required=True)
     parser.add_argument("--benchmark-id")
+    parser.add_argument("--universe-id")
     parser.add_argument(
         "--training-panel",
         default="local_artifacts/excess_return_engine/training_panel.parquet",
@@ -1006,6 +1024,7 @@ def main() -> None:
         permno=args.permno,
         selected_factors=tuple(args.factors),
         benchmark_id=args.benchmark_id,
+        universe_id=args.universe_id,
         as_of_date=args.as_of_date,
         interval_level=args.interval_level,
         training_window_months=args.training_window_months,

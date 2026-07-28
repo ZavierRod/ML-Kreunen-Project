@@ -35,6 +35,14 @@ def forecast_result(
             label="Research benchmark",
             method="Research method",
         ),
+        universe_version="universe-v1",
+        universe=SimpleNamespace(
+            universe_id="all-covered",
+            label="All covered securities",
+            method="Retain all.",
+            retained_rows=1_000,
+            retained_share=1.0,
+        ),
         selected_factors=factors,
         training_window_months=None,
         interval_level=0.8,
@@ -171,6 +179,10 @@ class ExperimentTests(unittest.TestCase):
                 "Research benchmark",
             )
             self.assertEqual(
+                comparison[0]["Training universe"],
+                "All covered securities",
+            )
+            self.assertEqual(
                 comparison[0]["Expected-return delta vs first"],
                 0.0,
             )
@@ -217,6 +229,12 @@ class ExperimentTests(unittest.TestCase):
             payload.pop("benchmark_version")
             payload.pop("benchmark_label")
             payload.pop("benchmark_method")
+            payload.pop("universe_id")
+            payload.pop("universe_version")
+            payload.pop("universe_label")
+            payload.pop("universe_method")
+            payload.pop("universe_retained_rows")
+            payload.pop("universe_retained_share")
             Path(path).write_text(json.dumps(payload), encoding="utf-8")
 
             listed = list_experiments(directory)

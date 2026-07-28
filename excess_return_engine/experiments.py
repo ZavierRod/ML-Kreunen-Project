@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .model import ForecastResult
 
-EXPERIMENT_VERSION = "saved-experiment-v8"
+EXPERIMENT_VERSION = "saved-experiment-v9"
 SUPPORTED_EXPERIMENT_VERSIONS = {
     "saved-experiment-v1",
     "saved-experiment-v2",
@@ -19,6 +19,7 @@ SUPPORTED_EXPERIMENT_VERSIONS = {
     "saved-experiment-v5",
     "saved-experiment-v6",
     "saved-experiment-v7",
+    "saved-experiment-v8",
     EXPERIMENT_VERSION,
 }
 MAX_EXPERIMENT_NAME_LENGTH = 80
@@ -48,6 +49,12 @@ class SavedExperiment:
     benchmark_version: str | None
     benchmark_label: str | None
     benchmark_method: str | None
+    universe_id: str | None
+    universe_version: str | None
+    universe_label: str | None
+    universe_method: str | None
+    universe_retained_rows: int | None
+    universe_retained_share: float | None
     selected_factors: tuple[str, ...]
     training_window_months: int | None
     interval_level: float
@@ -136,6 +143,12 @@ def save_experiment(
         benchmark_version=result.benchmark_version,
         benchmark_label=result.benchmark.label,
         benchmark_method=result.benchmark.method,
+        universe_id=result.universe.universe_id,
+        universe_version=result.universe_version,
+        universe_label=result.universe.label,
+        universe_method=result.universe.method,
+        universe_retained_rows=result.universe.retained_rows,
+        universe_retained_share=result.universe.retained_share,
         selected_factors=tuple(result.selected_factors),
         training_window_months=result.training_window_months,
         interval_level=float(result.interval_level),
@@ -230,6 +243,8 @@ def comparison_warnings(
         ("target_month", "target month"),
         ("benchmark_id", "benchmark"),
         ("benchmark_version", "benchmark-registry version"),
+        ("universe_id", "training universe"),
+        ("universe_version", "training-universe version"),
         ("training_window_months", "training window"),
         ("data_version", "data version"),
         ("model_version", "model version"),
@@ -274,6 +289,16 @@ def comparison_records(
             "Benchmark": (
                 getattr(item, "benchmark_label", None)
                 or getattr(item, "benchmark_id", "Not recorded")
+            ),
+            "Training universe": (
+                getattr(item, "universe_label", None)
+                or getattr(item, "universe_id", "Not recorded")
+            ),
+            "Universe rows": getattr(
+                item, "universe_retained_rows", None
+            ),
+            "Universe retained": getattr(
+                item, "universe_retained_share", None
             ),
             "Expected excess return": item.expected_excess_return,
             "Expected-return delta vs first": (
@@ -396,6 +421,18 @@ def _experiment_from_dict(payload: dict[str, object]) -> SavedExperiment:
         ),
         benchmark_label=_optional_string(payload.get("benchmark_label")),
         benchmark_method=_optional_string(payload.get("benchmark_method")),
+        universe_id=_optional_string(payload.get("universe_id")),
+        universe_version=_optional_string(
+            payload.get("universe_version")
+        ),
+        universe_label=_optional_string(payload.get("universe_label")),
+        universe_method=_optional_string(payload.get("universe_method")),
+        universe_retained_rows=_optional_int(
+            payload.get("universe_retained_rows")
+        ),
+        universe_retained_share=_optional_float(
+            payload.get("universe_retained_share")
+        ),
         selected_factors=tuple(str(item) for item in payload["selected_factors"]),
         training_window_months=(
             None

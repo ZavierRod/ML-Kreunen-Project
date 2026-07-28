@@ -15,6 +15,10 @@ from excess_return_engine.model import (
     generate_forecast,
 )
 from excess_return_engine.reliability import RELIABILITY_VERSION
+from excess_return_engine.universes import (
+    ALL_COVERED_UNIVERSE_ID,
+    LARGE_LIQUID_UNIVERSE_ID,
+)
 from excess_return_engine.validation import VALIDATION_VERSION
 
 
@@ -38,6 +42,8 @@ def synthetic_panels() -> tuple[pd.DataFrame, pd.DataFrame]:
                     "company": f"Company {permno}",
                     "size": size,
                     "market_cap": float(np.exp(size)),
+                    "dlyprc": 10.0 + permno,
+                    "n_days": 21,
                     "momentum_12_1": momentum,
                     "source_last_trading_date": month,
                     "stock_return_next_month": target + benchmark_return,
@@ -60,6 +66,8 @@ def synthetic_panels() -> tuple[pd.DataFrame, pd.DataFrame]:
                 "market_cap": float(
                     np.exp(permno / 10 + len(months) / 500)
                 ),
+                "dlyprc": 10.0 + permno,
+                "n_days": 21,
                 "momentum_12_1": np.sin(len(months) / 8 + permno) / 10,
                 "source_last_trading_date": inference_month,
                 "stock_return_next_month": np.nan,
@@ -177,6 +185,10 @@ class ForecastTests(unittest.TestCase):
             result.benchmark.label,
             "Source benchmark · test-benchmark",
         )
+        self.assertEqual(
+            result.universe.universe_id,
+            ALL_COVERED_UNIVERSE_ID,
+        )
         self.assertEqual(len(result.challenger_diagnostics.metrics), 5)
         self.assertTrue(
             all(
@@ -224,6 +236,49 @@ class ForecastTests(unittest.TestCase):
             equal_weight.configuration_id,
         )
         self.assertNotEqual(source.data_version, equal_weight.data_version)
+
+    def test_forecast_filters_selected_training_universe(self) -> None:
+        training, inference = synthetic_panels()
+        all_covered = generate_forecast(
+            training,
+            inference,
+            ForecastRequest(
+                permno=3,
+                selected_factors=("size", "momentum_12_1"),
+                tuning_months=6,
+                calibration_months=12,
+                minimum_training_months=48,
+                alpha_grid=(0.0001,),
+                l1_ratio_grid=(0.5,),
+            ),
+        )
+        large_liquid = generate_forecast(
+            training,
+            inference,
+            ForecastRequest(
+                permno=3,
+                selected_factors=("size", "momentum_12_1"),
+                universe_id=LARGE_LIQUID_UNIVERSE_ID,
+                tuning_months=6,
+                calibration_months=12,
+                minimum_training_months=48,
+                alpha_grid=(0.0001,),
+                l1_ratio_grid=(0.5,),
+            ),
+        )
+
+        self.assertEqual(
+            large_liquid.universe.universe_id,
+            LARGE_LIQUID_UNIVERSE_ID,
+        )
+        self.assertLess(
+            large_liquid.universe.retained_rows,
+            all_covered.universe.retained_rows,
+        )
+        self.assertNotEqual(
+            large_liquid.configuration_id,
+            all_covered.configuration_id,
+        )
 
     def test_forecast_requires_enough_history(self) -> None:
         training, inference = synthetic_panels()

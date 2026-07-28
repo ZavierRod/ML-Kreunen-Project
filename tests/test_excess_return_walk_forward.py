@@ -5,6 +5,7 @@ import pandas as pd
 
 from excess_return_engine.walk_forward import (
     WALK_FORWARD_VERSION,
+    _rank_ic,
     evaluate_walk_forward,
 )
 
@@ -36,6 +37,14 @@ def walk_forward_frames() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 class WalkForwardTests(unittest.TestCase):
+    def test_rank_ic_is_unavailable_for_constant_predictions(self) -> None:
+        self.assertIsNone(
+            _rank_ic(
+                np.array([-0.1, 0.0, 0.1]),
+                np.zeros(3),
+            )
+        )
+
     def test_predictions_use_only_earlier_months(self) -> None:
         historical, calibration = walk_forward_frames()
 

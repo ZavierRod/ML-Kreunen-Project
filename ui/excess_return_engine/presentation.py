@@ -15,6 +15,7 @@ from excess_return_engine.experiments import (
 from excess_return_engine.features import FACTOR_REGISTRY
 from excess_return_engine.lineage import assess_factor_lineage
 from excess_return_engine.model import ForecastResult
+from excess_return_engine.universes import apply_training_universe
 
 FACTOR_PRESETS = {
     "Balanced": (
@@ -70,6 +71,9 @@ def queue_saved_configuration(
         "forecast_as_of": saved.as_of_date,
         "forecast_company": company_label,
         "forecast_benchmark": saved.benchmark_id,
+        "forecast_universe": (
+            saved.universe_id or "all-covered"
+        ),
         "forecast_factors": list(saved.selected_factors),
         "forecast_interval": saved.interval_level,
         "forecast_training_window": (
@@ -128,6 +132,7 @@ def configuration_quality(
     training_window_months: int | None = None,
     minimum_required_months: int = 120,
     as_of_date: str | pd.Timestamp | None = None,
+    universe_id: str | None = None,
 ) -> dict[str, object]:
     if not selected_factors:
         return {
@@ -166,6 +171,10 @@ def configuration_quality(
         relevant = relevant[
             pd.to_datetime(relevant["month_end"]).isin(retained_months)
         ]
+    relevant, universe = apply_training_universe(
+        relevant,
+        universe_id,
+    )
     current_completeness = float(
         current.iloc[0][list(selected_factors)].notna().mean()
     )
@@ -233,6 +242,7 @@ def configuration_quality(
         "historical_coverage": historical_coverage,
         "correlated_pairs": tuple(correlated_pairs),
         "factor_lineage": lineage,
+        "training_universe": universe,
     }
 
 

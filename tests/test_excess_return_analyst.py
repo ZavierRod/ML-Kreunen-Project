@@ -23,6 +23,16 @@ def forecast_result() -> SimpleNamespace:
             method="Research method",
             limitation="Research limitation",
         ),
+        universe_version="universe-v1",
+        universe=SimpleNamespace(
+            universe_id="all-covered",
+            label="All covered securities",
+            method="Retain all.",
+            limitation="Research universe.",
+            input_rows=1_000,
+            retained_rows=1_000,
+            retained_share=1.0,
+        ),
         selected_factors=("size",),
         model_version="model-v1",
         feature_version="feature-v1",
@@ -223,6 +233,10 @@ class ForecastAnalystTests(unittest.TestCase):
         self.assertEqual(
             context["forecast_run"]["benchmark"]["label"],
             "Research benchmark",
+        )
+        self.assertEqual(
+            context["forecast_run"]["training_universe"]["id"],
+            "all-covered",
         )
 
     def test_context_can_include_analog_rows_explicitly(self) -> None:

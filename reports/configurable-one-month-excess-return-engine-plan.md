@@ -202,6 +202,32 @@ Implementation status:
   Both passed the panel audit with zero blockers. The Streamlit benchmark selector
   loaded the cached equal-weight run without errors. Fresh recomputation verified
   both immutable forecast records and their distinct walk-forward ledgers exactly.
+- Versioned model-training universe selection is implemented in
+  `excess_return_engine/universes.py`. Users can retain all covered labeled rows or
+  apply a same-month large/liquid research screen requiring positive market
+  capitalization, an absolute price of at least $5, at least 15 observed trading
+  days, and market capitalization at or above that month's eligible median.
+- The selected universe filters model fitting, tuning, calibration, validation,
+  walk-forward evaluation, and historical analogs. It does not redefine the
+  benchmark or the full-cross-section factor ranks. Universe identity, method,
+  limitation, retained sample diagnostics, registry version, and filtered data
+  fingerprint are preserved in immutable runs, saved experiments, UI evidence,
+  preflight checks, and LLM context.
+- Real 120-month GOOGL universe comparison produced distinct immutable runs.
+  All-covered run `0456b75d5f646cfd` used 495,094 rows and forecast `-0.27%`
+  expected excess return with `47.29%` positive probability. Large/liquid run
+  `375be655081e8aed` retained 244,251 rows (`49.3%`) across all 120 months and
+  forecast `-0.21%` with `48.38%` positive probability. Both passed all blocking
+  controls and fresh recomputation verified both forecast records and their
+  separate walk-forward ledgers.
+- The large/liquid run selected an intercept-only Elastic Net solution. Its
+  `0.10%` holdout out-of-sample R-squared remained modest, and monthly rank IC
+  was correctly unavailable because constant cross-sectional predictions cannot
+  be ranked. The UI and artifacts preserve that result rather than implying
+  unsupported factor-level signal.
+- Streamlit AppTest executed the large/liquid 120-month workflow without
+  exceptions or rendered errors. A real `saved-experiment-v9` round trip restored
+  the selected universe, retained-row diagnostics, and training window.
 - Delisting-return and actual fundamental-availability-date audits remain open.
 
 ## 1. Feature Summary
