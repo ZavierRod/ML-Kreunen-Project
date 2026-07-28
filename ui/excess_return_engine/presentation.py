@@ -70,7 +70,7 @@ def configuration_quality(
     inference: pd.DataFrame,
     permno: int,
     selected_factors: tuple[str, ...],
-) -> dict[str, float | int | str]:
+) -> dict[str, object]:
     if not selected_factors:
         return {
             "status": "blocked",
@@ -79,6 +79,7 @@ def configuration_quality(
             "training_months": 0,
             "current_completeness": 0.0,
             "historical_coverage": 0.0,
+            "correlated_pairs": (),
         }
     current = inference[inference["permno"] == permno]
     if len(current) != 1:
@@ -89,6 +90,7 @@ def configuration_quality(
             "training_months": 0,
             "current_completeness": 0.0,
             "historical_coverage": 0.0,
+            "correlated_pairs": (),
         }
 
     relevant = training.dropna(subset=["excess_return_next_month"])
@@ -99,6 +101,15 @@ def configuration_quality(
         relevant[list(selected_factors)].notna().mean().mean()
     )
     training_months = int(relevant["month_end"].nunique())
+    correlations = relevant[list(selected_factors)].corr()
+    correlated_pairs = []
+    for left_index, factor_a in enumerate(selected_factors):
+        for factor_b in selected_factors[left_index + 1 :]:
+            correlation = correlations.loc[factor_a, factor_b]
+            if pd.notna(correlation) and abs(float(correlation)) >= 0.85:
+                correlated_pairs.append(
+                    (factor_a, factor_b, float(correlation))
+                )
     status = "ready"
     message = "Configuration passes the research minimums."
     if training_months < 96:
@@ -118,6 +129,7 @@ def configuration_quality(
         "training_months": training_months,
         "current_completeness": current_completeness,
         "historical_coverage": historical_coverage,
+        "correlated_pairs": tuple(correlated_pairs),
     }
 
 
@@ -180,6 +192,34 @@ def historical_analog_table(result: ForecastResult) -> pd.DataFrame:
                 "Observed excess return": analog.observed_excess_return,
             }
             for analog in result.historical_evidence.analogs
+        ]
+    )
+
+
+def reliability_component_table(result: ForecastResult) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "Component": item.component,
+                "Score": item.score,
+                "Status": item.status,
+                "Measured value": item.value,
+                "Definition": item.detail,
+            }
+            for item in result.reliability.components
+        ]
+    )
+
+
+def correlation_warning_table(result: ForecastResult) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "Factor A": FACTOR_REGISTRY[item.factor_a].label,
+                "Factor B": FACTOR_REGISTRY[item.factor_b].label,
+                "Correlation": item.correlation,
+            }
+            for item in result.reliability.correlated_factor_pairs
         ]
     )
 

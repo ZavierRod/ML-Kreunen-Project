@@ -12,17 +12,22 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 
+from .evidence import (
+    FactorRegime,
+    HistoricalEvidence,
+    classify_factor_regimes,
+    find_similar_conditions,
+)
 from .features import (
     FEATURE_VERSION,
     rank_normalize_factors,
     ranked_factor_column,
     validate_factor_selection,
 )
-from .evidence import (
-    FactorRegime,
-    HistoricalEvidence,
-    classify_factor_regimes,
-    find_similar_conditions,
+from .reliability import (
+    RELIABILITY_VERSION,
+    ReliabilityAssessment,
+    assess_reliability,
 )
 
 MODEL_VERSION = "elastic-net-panel-v1"
@@ -80,6 +85,7 @@ class FactorContribution:
 class ForecastResult:
     configuration_id: str
     model_version: str
+    reliability_version: str
     feature_version: str
     target_version: str
     data_version: str
@@ -99,6 +105,7 @@ class ForecastResult:
     contributions: tuple[FactorContribution, ...]
     current_regime: tuple[FactorRegime, ...]
     historical_evidence: HistoricalEvidence
+    reliability: ReliabilityAssessment
     model_parameters: dict[str, float]
     validation_metrics: dict[str, float | int]
     data_quality: dict[str, float | int | str]
@@ -288,6 +295,7 @@ def _validation_metrics(
     predictions: np.ndarray,
     calibration_residuals: np.ndarray,
     residual_bounds: tuple[float, float],
+    baseline_probability: float,
 ) -> dict[str, float | int]:
     actual = validation[TARGET_COLUMN].to_numpy(dtype=float)
     residual = actual - predictions
@@ -295,6 +303,7 @@ def _validation_metrics(
         predictions,
         calibration_residuals,
     )
+    positive_outcome = (actual > 0).astype(float)
     lower_residual, upper_residual = residual_bounds
     covered = (actual >= predictions + lower_residual) & (
         actual <= predictions + upper_residual
@@ -308,7 +317,11 @@ def _validation_metrics(
         "mae": float(np.mean(np.abs(residual))),
         "rmse": float(np.sqrt(np.mean(np.square(residual)))),
         "directional_hit_rate": float(np.mean((actual > 0) == (predictions > 0))),
-        "brier_score": float(np.mean(np.square((actual > 0).astype(float) - probability))),
+        "positive_outcome_rate": float(np.mean(positive_outcome)),
+        "brier_score": float(np.mean(np.square(positive_outcome - probability))),
+        "brier_baseline": float(
+            np.mean(np.square(positive_outcome - baseline_probability))
+        ),
         "interval_coverage": float(np.mean(covered)),
         "oos_r2_vs_zero": oos_r2,
     }
@@ -338,6 +351,7 @@ def _configuration_id(
         "feature_version": FEATURE_VERSION,
         "model_version": MODEL_VERSION,
         "target_version": TARGET_VERSION,
+        "reliability_version": RELIABILITY_VERSION,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()[:16]
@@ -461,6 +475,9 @@ def generate_forecast(
         residual_eval["_prediction"].to_numpy(dtype=float),
         calibration_residuals,
         residual_bounds,
+        baseline_probability=float(
+            np.mean(residual_fit[TARGET_COLUMN].to_numpy(dtype=float) > 0)
+        ),
     )
 
     y_all_raw = ranked_historical[TARGET_COLUMN].to_numpy(dtype=float)
@@ -529,6 +546,23 @@ def generate_forecast(
     data_version = (
         f"rows-{len(historical)}_months-{training_start}-to-{training_end}"
     )
+    point_in_time_status = "research_lag_proxy"
+    reliability = assess_reliability(
+        historical=ranked_historical,
+        selected_factors=selected,
+        normalized_values=normalized_values,
+        validation_metrics=metrics,
+        interval_level=request.interval_level,
+        calibration_coefficients=calibration_model.coef_,
+        final_coefficients=final_model.coef_,
+        selected_factor_completeness=selected_completeness,
+        historical_factor_coverage=training_coverage,
+        training_months=int(ranked_historical[MONTH_COLUMN].nunique()),
+        point_in_time_status=point_in_time_status,
+        analog_similarities=tuple(
+            analog.similarity for analog in historical_evidence.analogs
+        ),
+    )
 
     return ForecastResult(
         configuration_id=_configuration_id(
@@ -538,6 +572,7 @@ def generate_forecast(
             data_version,
         ),
         model_version=MODEL_VERSION,
+        reliability_version=RELIABILITY_VERSION,
         feature_version=FEATURE_VERSION,
         target_version=TARGET_VERSION,
         data_version=data_version,
@@ -557,6 +592,7 @@ def generate_forecast(
         contributions=contributions,
         current_regime=current_regime,
         historical_evidence=historical_evidence,
+        reliability=reliability,
         model_parameters=best,
         validation_metrics=metrics,
         data_quality={
@@ -565,7 +601,7 @@ def generate_forecast(
             "training_rows": int(len(ranked_historical)),
             "training_months": int(ranked_historical[MONTH_COLUMN].nunique()),
             "calibration_residual_rows": int(len(calibration_residuals)),
-            "point_in_time_status": "research_lag_proxy",
+            "point_in_time_status": point_in_time_status,
         },
         target_clip_bounds=final_clip_bounds,
     )

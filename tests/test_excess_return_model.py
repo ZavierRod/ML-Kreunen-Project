@@ -12,6 +12,7 @@ from excess_return_engine.model import (
     _empirical_probability_positive,
     generate_forecast,
 )
+from excess_return_engine.reliability import RELIABILITY_VERSION
 
 
 def synthetic_panels() -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -150,6 +151,9 @@ class ForecastTests(unittest.TestCase):
         self.assertEqual(len(result.current_regime), 2)
         self.assertEqual(result.historical_evidence.neighbor_count, 20)
         self.assertEqual(len(result.historical_evidence.analogs), 20)
+        self.assertGreaterEqual(result.reliability.model_reliability_score, 0)
+        self.assertLessEqual(result.reliability.model_reliability_score, 100)
+        self.assertEqual(result.reliability_version, RELIABILITY_VERSION)
 
     def test_forecast_requires_enough_history(self) -> None:
         training, inference = synthetic_panels()

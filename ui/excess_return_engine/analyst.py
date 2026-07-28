@@ -78,6 +78,7 @@ FORECAST_ANALYST_SCHEMA: dict[str, Any] = {
                                 "contribution",
                                 "regime",
                                 "historical_evidence",
+                                "reliability",
                                 "validation",
                                 "data_quality",
                             ],
@@ -228,7 +229,7 @@ def build_forecast_context(
             for analog in evidence.analogs
         ]
 
-    return {
+    context: dict[str, object] = {
         "forecast_run": {
             "id": result.configuration_id,
             "ticker": result.ticker,
@@ -293,6 +294,38 @@ def build_forecast_context(
             "Explicit delisting-return integration remains pending.",
         ],
     }
+    reliability = getattr(result, "reliability", None)
+    if reliability is not None:
+        context["reliability"] = {
+            "model_reliability_score": reliability.model_reliability_score,
+            "model_reliability_label": reliability.model_reliability_label,
+            "data_quality_score": reliability.data_quality_score,
+            "data_quality_label": reliability.data_quality_label,
+            "current_distance_percentile": reliability.current_distance_percentile,
+            "current_distance_status": reliability.current_distance_status,
+            "nearest_similarity": reliability.nearest_similarity,
+            "close_analog_count": reliability.close_analog_count,
+            "components": [
+                {
+                    "component": item.component,
+                    "score": item.score,
+                    "status": item.status,
+                    "value": item.value,
+                    "detail": item.detail,
+                }
+                for item in reliability.components
+            ],
+            "correlated_factor_pairs": [
+                {
+                    "factor_a": item.factor_a,
+                    "factor_b": item.factor_b,
+                    "correlation": item.correlation,
+                }
+                for item in reliability.correlated_factor_pairs
+            ],
+            "warnings": list(reliability.warnings),
+        }
+    return context
 
 
 def answer_forecast_question(

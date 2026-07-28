@@ -26,10 +26,12 @@ from ui.excess_return_engine.presentation import (
     FACTOR_PRESETS,
     company_options,
     configuration_quality,
+    correlation_warning_table,
     contribution_table,
     factor_option_label,
     historical_analog_table,
     predictive_strength_label,
+    reliability_component_table,
     regime_summary,
     regime_table,
 )
@@ -345,6 +347,11 @@ if quality["status"] == "blocked":
     st.error(str(quality["message"]))
 else:
     st.caption(str(quality["message"]))
+if quality["correlated_pairs"]:
+    st.warning(
+        "Selected factors include correlations of at least 0.85. Run-level "
+        "reliability will report the affected pairs."
+    )
 
 run_forecast = st.button(
     "Run forecast",
@@ -413,8 +420,11 @@ headline[2].metric(
     ),
 )
 headline[3].metric(
-    "Predictive strength",
-    predictive_strength_label(result.validation_metrics),
+    "Model reliability",
+    (
+        f"{result.reliability.model_reliability_label} · "
+        f"{result.reliability.model_reliability_score:.0f}/100"
+    ),
 )
 
 st.caption(
@@ -423,8 +433,14 @@ st.caption(
 )
 
 contributions = contribution_table(result)
-contribution_tab, evidence_tab, validation_tab, data_tab = st.tabs(
-    ["Contributions", "Regime & analogs", "Validation", "Data quality"]
+contribution_tab, evidence_tab, reliability_tab, validation_tab, data_tab = st.tabs(
+    [
+        "Contributions",
+        "Regime & analogs",
+        "Reliability",
+        "Validation",
+        "Data quality",
+    ]
 )
 with contribution_tab:
     left, right = st.columns([1.25, 0.75])
@@ -503,6 +519,44 @@ with evidence_tab:
         width="stretch",
         height=390,
     )
+with reliability_tab:
+    reliability = result.reliability
+    reliability_columns = st.columns(4)
+    reliability_columns[0].metric(
+        "Model reliability",
+        f"{reliability.model_reliability_score:.0f}/100",
+    )
+    reliability_columns[1].metric(
+        "Data quality",
+        f"{reliability.data_quality_score:.0f}/100",
+    )
+    reliability_columns[2].metric(
+        "Training-distance percentile",
+        f"{reliability.current_distance_percentile:.0%}",
+    )
+    reliability_columns[3].metric(
+        "Close historical analogs",
+        reliability.close_analog_count,
+    )
+    st.caption(
+        f"{reliability.current_distance_status} · Nearest similarity "
+        f"{reliability.nearest_similarity:.1%}"
+    )
+    st.dataframe(
+        reliability_component_table(result).style.format({"Score": "{:.0f}/100"}),
+        hide_index=True,
+        width="stretch",
+    )
+    for warning in reliability.warnings:
+        st.warning(warning)
+    correlations = correlation_warning_table(result)
+    if not correlations.empty:
+        st.markdown("**Highly correlated selected factors**")
+        st.dataframe(
+            correlations.style.format({"Correlation": "{:+.2f}"}),
+            hide_index=True,
+            width="stretch",
+        )
 with validation_tab:
     metrics = result.validation_metrics
     validation_columns = st.columns(4)
@@ -537,6 +591,10 @@ with validation_tab:
         hide_index=True,
         width="stretch",
     )
+    st.caption(
+        "Predictive strength: "
+        f"{predictive_strength_label(result.validation_metrics)}"
+    )
 with data_tab:
     quality_rows = [
         {"Component": key.replace("_", " ").title(), "Value": str(value)}
@@ -545,7 +603,8 @@ with data_tab:
     st.dataframe(pd.DataFrame(quality_rows), hide_index=True, width="stretch")
     st.caption(
         f"Data: {result.data_version} · Target: {result.target_version} · "
-        f"Features: {result.feature_version} · Model: {result.model_version}"
+        f"Features: {result.feature_version} · Model: {result.model_version} · "
+        f"Reliability: {result.reliability_version}"
     )
 
 render_forecast_analyst(result)

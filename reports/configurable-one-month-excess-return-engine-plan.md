@@ -68,6 +68,16 @@ Implementation status:
   deterministic summary rather than displaying noncompliant prose.
 - Questions and accepted answers are appended to ignored local JSONL audit files;
   credentials and raw WRDS research panels are never included.
+- Versioned model-reliability and data-quality assessment is implemented in
+  `excess_return_engine/reliability.py`. It scores out-of-sample improvement,
+  probability and interval calibration, coefficient stability, current-observation
+  similarity, close-analog coverage, factor completeness, history depth, and
+  point-in-time status.
+- Forecast records and the UI expose every score component, multivariate
+  training-distance percentile, nearest similarity, correlated selected-factor
+  pairs, and downgrade warnings. The real eight-factor GOOGL run scores `66.5/100`
+  model reliability and `79/100` data quality; the latter is capped because
+  fundamentals still use the research-lag proxy.
 - Delisting-return and actual fundamental-availability-date audits remain open.
 
 ## 1. Feature Summary

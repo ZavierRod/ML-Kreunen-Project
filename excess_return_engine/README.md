@@ -96,6 +96,7 @@ The command prints and saves:
 - Factor-level contributions and normalized values
 - Current percentile regime for every selected factor
 - Nearest historical conditions and their realized excess-return distribution
+- Transparent model-reliability and data-quality scores with component evidence
 - Chronological holdout metrics
 - Selected hyperparameters
 - Data, target, feature, and model versions
@@ -104,6 +105,28 @@ Hyperparameters are selected on a chronological tuning window. Residual
 probabilities and intervals use a later calibration window, and interval coverage is
 measured on the final half of that window. The final selected model is then fit on
 all historical rows before forecasting the requested security.
+
+## Reliability assessment
+
+`excess_return_engine/reliability.py` calculates a versioned model-reliability score
+from six measurable components:
+
+- Out-of-sample R-squared versus a zero-excess-return baseline
+- Brier skill versus the calibration-window constant-probability baseline
+- Prediction-interval coverage error
+- Stability between pre-calibration and final Elastic Net coefficients
+- Similarity to the nearest historical normalized factor vector
+- Number of close historical analogs
+
+The separate data-quality score uses current factor completeness, historical factor
+coverage, training depth, and point-in-time status. Research-lag-proxy fundamentals
+cap that score below `High` until actual availability timestamps are integrated.
+
+The assessment also reports the current vector's multivariate training-distance
+percentile and selected-factor pairs with absolute historical correlation of at
+least `0.85`. Failed baseline comparisons, poor interval coverage, distribution
+shift, sparse analog coverage, correlation, and point-in-time limitations remain
+explicit warnings in the forecast JSON and UI.
 
 Forecasts are research outputs. The current benchmark is the lagged-cap-weighted
 covered universe, fundamentals use the documented availability-lag proxy, and
