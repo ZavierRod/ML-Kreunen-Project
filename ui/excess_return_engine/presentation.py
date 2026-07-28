@@ -281,6 +281,22 @@ def factor_lineage_table(result: ForecastResult) -> pd.DataFrame:
     )
 
 
+def panel_audit_table(result: ForecastResult) -> pd.DataFrame:
+    """Return the forecast-scope data-contract checks."""
+    return pd.DataFrame(
+        [
+            {
+                "Check": check.label,
+                "Status": check.status,
+                "Severity": check.severity.title(),
+                "Observed": check.observed,
+                "Requirement": check.detail,
+            }
+            for check in result.panel_audit.checks
+        ]
+    )
+
+
 def regime_summary(result: ForecastResult, limit: int = 2) -> str:
     strongest = sorted(
         result.current_regime,

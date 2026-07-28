@@ -26,6 +26,7 @@ By default, the command writes these ignored files under
 - `training_panel.parquet`
 - `inference_panel.parquet`
 - `unresolved_labels.parquet`
+- `panel_audit.json`
 
 The initial research benchmark is the covered universe's monthly return, weighted
 by each security's prior-calendar-month market capitalization. Replace this with a
@@ -125,6 +126,7 @@ model again. Every artifact records:
 - Forecast, coefficients, normalized inputs, contributions, uncertainty,
   reliability, validation, challenger, regime, analog evidence, and per-factor
   source lineage
+- A versioned panel audit covering the exact historical and inference scope
 
 Writes are atomic. A corrupt or obsolete artifact is recomputed and repaired. The
 UI's **Recompute cached run** toggle verifies an existing immutable artifact; it
@@ -235,6 +237,35 @@ evidence older than seven days at month-end is stale. Aging and stale evidence
 remain visible in the UI and reduce reliability rather than being silently treated
 as current.
 
+## Forecast panel audit
+
+`excess_return_engine/audit.py` runs a versioned data-contract audit before a
+configuration ID is accepted or a model is fit. Blocking checks require:
+
+- Unique permanent-security/month rows
+- Historical rows strictly before the forecast as-of month
+- Exact next-calendar-month targets
+- Finite stock, benchmark, and excess returns
+- Reconciliation of excess return to stock return minus benchmark return
+- One matching benchmark across training and inference
+- No realized stock, benchmark, or excess-return values in inference
+- Complete market or fundamental dates for rows with selected factor values
+- No market or fundamental source dates after their observation month
+
+The audit separately marks items that require research review without concealing
+them. The current checks count stock returns above 100% in absolute value, disclose
+whether explicit delisting fields are available, and label fixed-lag fundamental
+timing. The local build writes `panel_audit.json`; each forecast also carries its
+own audit ID and exact-scope checks in the immutable run artifact.
+The audit ID includes a SHA-256 fingerprint over the audited identifiers, outcomes,
+source dates, selected factor values, and delisting evidence, so it identifies
+content rather than only aggregate check counts.
+
+The run content fingerprint includes raw stock and benchmark outcomes, source
+dates, and every registered factor source field in addition to derived factor
+values. A source correction therefore creates a new run ID even if the displayed
+factor or excess return is unchanged.
+
 The assessment also reports the current vector's multivariate training-distance
 percentile and selected-factor pairs with absolute historical correlation of at
 least `0.85`. Failed baseline comparisons, poor interval coverage, distribution
@@ -303,6 +334,7 @@ restore and compare a run:
   version IDs
 - Factor-lineage version, aggregate freshness score, freshness counts, and
   research-lag-proxy count
+- Panel-audit version, immutable audit ID, status, and blocking/review counts
 
 Saved manifests are versioned JSON files under the ignored
 `local_artifacts/excess_return_engine/experiments/` directory. They do not contain

@@ -48,6 +48,7 @@ from ui.excess_return_engine.presentation import (
     experiment_comparison_table,
     experiment_contribution_table,
     historical_analog_table,
+    panel_audit_table,
     predictive_strength_label,
     queue_saved_configuration,
     reliability_component_table,
@@ -1220,6 +1221,34 @@ with data_tab:
     )
     if lineage.warnings:
         st.caption(" ".join(dict.fromkeys(lineage.warnings)))
+    panel_audit = result.panel_audit
+    st.markdown("**Forecast panel audit**")
+    audit_columns = st.columns(4)
+    audit_columns[0].metric("Audit status", panel_audit.status)
+    audit_columns[1].metric(
+        "Blocking issues",
+        panel_audit.blocking_issue_count,
+    )
+    audit_columns[2].metric(
+        "Review items",
+        panel_audit.review_issue_count,
+    )
+    audit_columns[3].metric(
+        "Extreme returns",
+        panel_audit.extreme_stock_return_count,
+    )
+    st.dataframe(
+        panel_audit_table(result),
+        hide_index=True,
+        width="stretch",
+    )
+    st.caption(
+        f"Panel audit: {panel_audit.audit_id} · "
+        f"Scope SHA-256: {panel_audit.scope_content_sha256[:16]}... · "
+        f"Historical scope: {panel_audit.historical_rows:,} rows across "
+        f"{panel_audit.historical_months:,} months · "
+        f"Inference cross-section: {panel_audit.inference_rows:,} rows"
+    )
     st.caption(
         f"Data: {result.data_version} · Target: {result.target_version} · "
         f"Features: {result.feature_version} · Model: {result.model_version} · "
@@ -1227,6 +1256,7 @@ with data_tab:
         f"Validation: {result.validation_version} · "
         f"Walk forward: {result.walk_forward_version} · "
         f"Lineage: {result.lineage_version} · "
+        f"Audit: {result.audit_version} · "
         f"Challengers: {result.challenger_version} · "
         f"Replay: {result.replay_version or 'not applicable'}"
     )

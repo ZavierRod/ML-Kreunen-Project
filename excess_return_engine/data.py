@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
@@ -277,12 +278,22 @@ def build_local_research_artifacts(
     output_dir: str | Path,
 ) -> ExcessReturnPanels:
     """Build local Parquet artifacts that are excluded from version control."""
-    from .features import build_factor_panel
+    from .audit import audit_forecast_panels
+    from .features import FACTOR_IDS, build_factor_panel
 
     stock = load_wrds_monthly_panel(data_dir)
     stock = build_factor_panel(stock)
     benchmark = build_lagged_value_weighted_benchmark(stock)
     panels = build_excess_return_panels(stock, benchmark)
+    benchmark_id = str(benchmark["benchmark_id"].iloc[0])
+    panel_audit = audit_forecast_panels(
+        panels.training,
+        panels.inference,
+        as_of_date=panels.inference[MONTH_COLUMN].max(),
+        benchmark_id=benchmark_id,
+        selected_factors=FACTOR_IDS,
+        strict=True,
+    )
 
     destination = Path(output_dir).expanduser().resolve()
     destination.mkdir(parents=True, exist_ok=True)
@@ -291,6 +302,13 @@ def build_local_research_artifacts(
     panels.training.to_parquet(destination / "training_panel.parquet", index=False)
     panels.inference.to_parquet(destination / "inference_panel.parquet", index=False)
     panels.unresolved.to_parquet(destination / "unresolved_labels.parquet", index=False)
+    audit_path = destination / "panel_audit.json"
+    audit_temporary = audit_path.with_suffix(".json.tmp")
+    audit_temporary.write_text(
+        json.dumps(asdict(panel_audit), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    audit_temporary.replace(audit_path)
     return panels
 
 

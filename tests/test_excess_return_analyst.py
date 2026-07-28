@@ -263,6 +263,36 @@ class ForecastAnalystTests(unittest.TestCase):
             {"market_cap": 100.0},
         )
 
+    def test_context_includes_panel_audit_evidence(self) -> None:
+        result = forecast_result()
+        result.audit_version = "panel-audit-v4"
+        result.panel_audit = SimpleNamespace(
+            version="panel-audit-v4",
+            audit_id="audit-123",
+            scope_content_sha256="a" * 64,
+            status="Review required",
+            selected_factors=("size",),
+            blocking_issue_count=0,
+            review_issue_count=1,
+            extreme_stock_return_count=2,
+            checks=(
+                SimpleNamespace(
+                    check_id="delisting_coverage",
+                    status="Review",
+                    observed="explicit delisting field unavailable",
+                    detail="Delisting integration is not proven.",
+                ),
+            ),
+        )
+
+        context = analyst.build_forecast_context(result)
+
+        self.assertEqual(context["panel_audit"]["audit_id"], "audit-123")
+        self.assertEqual(
+            context["panel_audit"]["checks"][0]["status"],
+            "Review",
+        )
+
     def test_context_includes_post_forecast_replay_outcome(self) -> None:
         context = analyst.build_forecast_context(
             forecast_result(),

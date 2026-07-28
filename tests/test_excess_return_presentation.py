@@ -15,6 +15,7 @@ from ui.excess_return_engine.presentation import (
     experiment_comparison_table,
     experiment_contribution_table,
     historical_analog_table,
+    panel_audit_table,
     predictive_strength_label,
     queue_saved_configuration,
     reliability_component_table,
@@ -189,6 +190,29 @@ class PresentationTests(unittest.TestCase):
 
         self.assertEqual(table.iloc[0]["Factor"], "Size")
         self.assertIn("market_cap=100.0", table.iloc[0]["Source evidence"])
+
+    def test_panel_audit_table_exposes_contract_checks(self) -> None:
+        result = SimpleNamespace(
+            panel_audit=SimpleNamespace(
+                checks=(
+                    SimpleNamespace(
+                        label="Inference outcome isolation",
+                        status="Pass",
+                        severity="blocking",
+                        observed="0 populated outcome cells",
+                        detail="Inference outcomes must be empty.",
+                    ),
+                )
+            )
+        )
+
+        table = panel_audit_table(result)
+
+        self.assertEqual(
+            table.iloc[0]["Check"],
+            "Inference outcome isolation",
+        )
+        self.assertEqual(table.iloc[0]["Status"], "Pass")
 
     def test_factor_labels_and_predictive_strength_are_explicit(self) -> None:
         self.assertEqual(factor_option_label("size"), "Size · Market")

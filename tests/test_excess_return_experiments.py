@@ -73,6 +73,13 @@ def forecast_result(
             aging_factor_count=0,
             research_proxy_factor_count=1,
         ),
+        audit_version="audit-v1",
+        panel_audit=SimpleNamespace(
+            audit_id="audit-123",
+            status="Review required",
+            blocking_issue_count=0,
+            review_issue_count=2,
+        ),
         challenger_version="challenger-v1",
         challenger_diagnostics=SimpleNamespace(
             leader_model_id="ols",
@@ -151,6 +158,10 @@ class ExperimentTests(unittest.TestCase):
                 "Research lag proxy",
             )
             self.assertEqual(
+                comparison[0]["Panel audit"],
+                "Review required",
+            )
+            self.assertEqual(
                 comparison[0]["Expected-return delta vs first"],
                 0.0,
             )
@@ -189,6 +200,11 @@ class ExperimentTests(unittest.TestCase):
             payload.pop("stale_factor_count")
             payload.pop("aging_factor_count")
             payload.pop("research_proxy_factor_count")
+            payload.pop("audit_version")
+            payload.pop("panel_audit_id")
+            payload.pop("panel_audit_status")
+            payload.pop("audit_blocking_issue_count")
+            payload.pop("audit_review_issue_count")
             Path(path).write_text(json.dumps(payload), encoding="utf-8")
 
             listed = list_experiments(directory)

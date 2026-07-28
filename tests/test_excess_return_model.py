@@ -26,6 +26,7 @@ def synthetic_panels() -> tuple[pd.DataFrame, pd.DataFrame]:
             size = permno / 10 + month_index / 500
             momentum = np.sin(month_index / 8 + permno) / 10
             target = 0.04 * size + 0.30 * momentum + rng.normal(0, 0.01)
+            benchmark_return = 0.005
             rows.append(
                 {
                     "permno": permno,
@@ -38,6 +39,8 @@ def synthetic_panels() -> tuple[pd.DataFrame, pd.DataFrame]:
                     "market_cap": float(np.exp(size)),
                     "momentum_12_1": momentum,
                     "source_last_trading_date": month,
+                    "stock_return_next_month": target + benchmark_return,
+                    "benchmark_return": benchmark_return,
                     "excess_return_next_month": target,
                 }
             )
@@ -58,6 +61,9 @@ def synthetic_panels() -> tuple[pd.DataFrame, pd.DataFrame]:
                 ),
                 "momentum_12_1": np.sin(len(months) / 8 + permno) / 10,
                 "source_last_trading_date": inference_month,
+                "stock_return_next_month": np.nan,
+                "benchmark_return": np.nan,
+                "excess_return_next_month": np.nan,
             }
             for permno in range(1, 9)
         ]

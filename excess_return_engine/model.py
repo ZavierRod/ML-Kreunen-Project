@@ -14,6 +14,7 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 
+from .audit import AUDIT_VERSION, PanelAudit, audit_forecast_panels
 from .challengers import (
     CHALLENGER_VERSION,
     DEFAULT_MAXIMUM_TRAINING_ROWS,
@@ -28,6 +29,7 @@ from .evidence import (
 )
 from .features import (
     FACTOR_IDS,
+    FACTOR_REGISTRY,
     FEATURE_VERSION,
     rank_normalize_factors,
     ranked_factor_column,
@@ -55,7 +57,7 @@ from .walk_forward import (
     evaluate_walk_forward,
 )
 
-MODEL_VERSION = "elastic-net-panel-v7"
+MODEL_VERSION = "elastic-net-panel-v8"
 TARGET_VERSION = "calendar-excess-return-v1"
 TARGET_COLUMN = "excess_return_next_month"
 MONTH_COLUMN = "month_end"
@@ -125,6 +127,7 @@ class ForecastResult:
     validation_version: str
     walk_forward_version: str
     lineage_version: str
+    audit_version: str
     feature_version: str
     target_version: str
     data_version: str
@@ -150,6 +153,7 @@ class ForecastResult:
     validation_diagnostics: ValidationDiagnostics
     walk_forward_diagnostics: WalkForwardDiagnostics
     factor_lineage: FactorLineageAssessment
+    panel_audit: PanelAudit
     challenger_diagnostics: ChallengerDiagnostics
     model_parameters: dict[str, float]
     validation_metrics: dict[str, float | int]
@@ -184,6 +188,7 @@ class _ForecastScope:
     snapshot_source: str
     benchmark_id: str
     data_version: str
+    panel_audit: PanelAudit
 
 
 def _load_elastic_net():
@@ -427,6 +432,7 @@ def _configuration_id(
         "validation_version": VALIDATION_VERSION,
         "walk_forward_version": WALK_FORWARD_VERSION,
         "lineage_version": LINEAGE_VERSION,
+        "audit_version": AUDIT_VERSION,
         "runtime_versions": runtime_versions(),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
@@ -451,7 +457,11 @@ def _frame_content_digest(
     frame: pd.DataFrame,
     columns: tuple[str, ...],
 ) -> bytes:
-    available = tuple(column for column in columns if column in frame.columns)
+    available = tuple(
+        dict.fromkeys(
+            column for column in columns if column in frame.columns
+        )
+    )
     hashed = pd.util.hash_pandas_object(
         frame[list(available)],
         index=False,
@@ -473,6 +483,13 @@ def _scope_data_version(
         and set(rank_columns).issubset(inference_cross_section.columns)
         else ()
     )
+    source_columns = tuple(
+        dict.fromkeys(
+            column
+            for factor_id in FACTOR_IDS
+            for column in FACTOR_REGISTRY[factor_id].source_columns
+        )
+    )
     columns = (
         SECURITY_COLUMN,
         MONTH_COLUMN,
@@ -481,7 +498,13 @@ def _scope_data_version(
         "ticker",
         "company",
         TARGET_COLUMN,
+        "stock_return_next_month",
+        "benchmark_return",
+        "source_last_trading_date",
+        "datadate",
+        "fund_available_date",
         *FACTOR_IDS,
+        *source_columns,
         *used_rank_columns,
     )
     digest = hashlib.sha256()
@@ -568,6 +591,14 @@ def _prepare_forecast_scope(
     if len(benchmark_ids) != 1 or benchmark_ids[0] != current_benchmark:
         raise ValueError("Training and inference panels must use one matching benchmark.")
     inference_cross_section = inference[inference[MONTH_COLUMN] == as_of]
+    panel_audit = audit_forecast_panels(
+        historical,
+        inference_cross_section,
+        as_of_date=as_of,
+        benchmark_id=current_benchmark,
+        selected_factors=selected,
+        strict=True,
+    )
     return _ForecastScope(
         inference=inference,
         historical=historical,
@@ -579,6 +610,7 @@ def _prepare_forecast_scope(
             historical,
             inference_cross_section,
         ),
+        panel_audit=panel_audit,
     )
 
 
@@ -846,6 +878,7 @@ def generate_forecast_computation(
         validation_version=VALIDATION_VERSION,
         walk_forward_version=WALK_FORWARD_VERSION,
         lineage_version=LINEAGE_VERSION,
+        audit_version=AUDIT_VERSION,
         feature_version=FEATURE_VERSION,
         target_version=TARGET_VERSION,
         data_version=scope.data_version,
@@ -871,6 +904,7 @@ def generate_forecast_computation(
         validation_diagnostics=validation_diagnostics,
         walk_forward_diagnostics=walk_forward.diagnostics,
         factor_lineage=factor_lineage,
+        panel_audit=scope.panel_audit,
         challenger_diagnostics=challenger_diagnostics,
         model_parameters=best,
         validation_metrics=metrics,

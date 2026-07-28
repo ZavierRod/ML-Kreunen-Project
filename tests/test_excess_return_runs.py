@@ -37,6 +37,7 @@ class ForecastRunTests(unittest.TestCase):
         training, inference = synthetic_panels()
         initial = forecast_configuration_id(training, inference, request())
         modified = training.copy()
+        modified.loc[0, "stock_return_next_month"] += 0.01
         modified.loc[0, "excess_return_next_month"] += 0.01
 
         changed = forecast_configuration_id(modified, inference, request())
@@ -57,6 +58,20 @@ class ForecastRunTests(unittest.TestCase):
             size_result.configuration_id,
             momentum_result.configuration_id,
         )
+
+    def test_source_lineage_change_creates_a_new_run_id(self) -> None:
+        training, inference = synthetic_panels()
+        initial = forecast_configuration_id(training, inference, request())
+        modified = inference.copy()
+        modified.loc[modified["permno"] == 3, "market_cap"] += 1.0
+
+        changed = forecast_configuration_id(
+            training,
+            modified,
+            request(),
+        )
+
+        self.assertNotEqual(initial, changed)
 
     def test_identical_run_is_loaded_from_cache(self) -> None:
         training, inference = synthetic_panels()

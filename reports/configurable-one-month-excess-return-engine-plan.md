@@ -169,6 +169,26 @@ Implementation status:
   factors were explicitly marked as research-lag proxies. Its immutable artifact
   reloaded from cache with the same eight lineage records and
   `factor-lineage-v1` manifest version.
+- Versioned forecast-scope panel audits are implemented in
+  `excess_return_engine/audit.py`. Model execution blocks duplicate
+  security-months, future training rows, non-contiguous target months, non-finite
+  outcomes, unreconciled excess returns, benchmark mismatches, populated inference
+  outcomes, missing selected-factor source dates, and future-dated source evidence.
+- Audit review findings remain distinct from blockers. Extreme stock returns,
+  unavailable explicit delisting fields, and fixed-lag fundamental timing are
+  disclosed in immutable runs, saved experiments, the Data tab, and LLM context.
+  Local panel rebuilds also write an ignored `panel_audit.json`.
+- Run fingerprints now cover stock and benchmark outcome components, source dates,
+  and every registered source column, so corrections beneath an unchanged derived
+  value invalidate the old configuration ID.
+- Real 120-month GOOGL run `91a5ed08fe70f5f9` passed all ten blocking controls
+  over 495,094 historical rows and a 3,935-security inference cross-section.
+  `panel-audit-v4` audit `e407472fae058c45` identified 563 stock returns above
+  100% absolute return and
+  retained the known delisting and fundamental-timing limitations as three review
+  items. Its 13-check record includes selected-factor source-date completeness
+  and content SHA-256
+  `e1253e9af37a55cd49de0bb90616a437b0033cbcec01de82db697aa20a55b0b7`.
 - Delisting-return and actual fundamental-availability-date audits remain open.
 
 ## 1. Feature Summary

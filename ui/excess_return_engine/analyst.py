@@ -257,6 +257,7 @@ def build_forecast_context(
             "target_version": result.target_version,
             "data_version": result.data_version,
             "lineage_version": getattr(result, "lineage_version", None),
+            "audit_version": getattr(result, "audit_version", None),
         },
         "numeric_convention": (
             "Returns, probabilities, coefficients, contributions, and coverage "
@@ -337,6 +338,29 @@ def build_forecast_context(
                     "warnings": list(factor.warnings),
                 }
                 for factor in lineage.factors
+            ],
+        }
+    panel_audit = getattr(result, "panel_audit", None)
+    if panel_audit is not None:
+        context["panel_audit"] = {
+            "version": panel_audit.version,
+            "audit_id": panel_audit.audit_id,
+            "scope_content_sha256": panel_audit.scope_content_sha256,
+            "status": panel_audit.status,
+            "selected_factors": list(panel_audit.selected_factors),
+            "blocking_issue_count": panel_audit.blocking_issue_count,
+            "review_issue_count": panel_audit.review_issue_count,
+            "extreme_stock_return_count": (
+                panel_audit.extreme_stock_return_count
+            ),
+            "checks": [
+                {
+                    "check_id": check.check_id,
+                    "status": check.status,
+                    "observed": check.observed,
+                    "detail": check.detail,
+                }
+                for check in panel_audit.checks
             ],
         }
     reliability = getattr(result, "reliability", None)
