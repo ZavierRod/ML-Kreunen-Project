@@ -19,6 +19,7 @@ from ui.excess_return_engine.presentation import (
     reliability_component_table,
     regime_summary,
     regime_table,
+    walk_forward_monthly_table,
     yearly_validation_table,
 )
 
@@ -258,6 +259,33 @@ class PresentationTests(unittest.TestCase):
             2025,
         )
 
+    def test_walk_forward_monthly_table_is_readable(self) -> None:
+        result = SimpleNamespace(
+            walk_forward_diagnostics=SimpleNamespace(
+                monthly_metrics=(
+                    SimpleNamespace(
+                        as_of_date="2025-11-30",
+                        target_month="2025-12-31",
+                        training_rows=1_000,
+                        evaluation_rows=100,
+                        mae=0.08,
+                        rmse=0.12,
+                        directional_hit_rate=0.52,
+                        brier_score=0.249,
+                        interval_coverage=0.79,
+                        rank_ic=0.03,
+                        mean_actual_excess_return=0.01,
+                        mean_predicted_excess_return=0.005,
+                    ),
+                ),
+            )
+        )
+
+        table = walk_forward_monthly_table(result)
+
+        self.assertEqual(table.iloc[0]["As of"], "2025-11-30")
+        self.assertEqual(table.iloc[0]["Rank IC"], 0.03)
+
     def test_experiment_comparison_uses_factor_labels(self) -> None:
         experiment = SimpleNamespace(
             name="Baseline",
@@ -278,6 +306,11 @@ class PresentationTests(unittest.TestCase):
             challenger_leader_model_id="ols",
             production_rmse=0.12,
             production_rmse_rank=2,
+            walk_forward_rmse=0.09,
+            walk_forward_oos_r2=0.01,
+            walk_forward_directional_hit_rate=0.52,
+            walk_forward_interval_coverage=0.8,
+            walk_forward_mean_rank_ic=0.03,
             contributions=(
                 SimpleNamespace(factor_id="size", contribution=0.001),
             ),
@@ -311,6 +344,11 @@ class PresentationTests(unittest.TestCase):
             challenger_leader_model_id=None,
             production_rmse=None,
             production_rmse_rank=None,
+            walk_forward_rmse=None,
+            walk_forward_oos_r2=None,
+            walk_forward_directional_hit_rate=None,
+            walk_forward_interval_coverage=None,
+            walk_forward_mean_rank_ic=None,
             contributions=(),
         )
 

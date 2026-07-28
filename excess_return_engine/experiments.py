@@ -10,11 +10,12 @@ from pathlib import Path
 
 from .model import ForecastResult
 
-EXPERIMENT_VERSION = "saved-experiment-v4"
+EXPERIMENT_VERSION = "saved-experiment-v5"
 SUPPORTED_EXPERIMENT_VERSIONS = {
     "saved-experiment-v1",
     "saved-experiment-v2",
     "saved-experiment-v3",
+    "saved-experiment-v4",
     EXPERIMENT_VERSION,
 }
 MAX_EXPERIMENT_NAME_LENGTH = 80
@@ -65,6 +66,12 @@ class SavedExperiment:
     challenger_leader_model_id: str | None
     production_rmse: float | None
     production_rmse_rank: int | None
+    walk_forward_version: str | None
+    walk_forward_rmse: float | None
+    walk_forward_oos_r2: float | None
+    walk_forward_directional_hit_rate: float | None
+    walk_forward_interval_coverage: float | None
+    walk_forward_mean_rank_ic: float | None
 
     def to_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -92,6 +99,7 @@ def save_experiment(
         if item.model_id == "elastic_net"
     )
     ordered_rmse = sorted(item.rmse for item in challenger.metrics)
+    walk_forward = result.walk_forward_diagnostics
     experiment = SavedExperiment(
         experiment_id=experiment_id,
         experiment_version=EXPERIMENT_VERSION,
@@ -138,6 +146,14 @@ def save_experiment(
         challenger_leader_model_id=challenger.leader_model_id,
         production_rmse=production_metric.rmse,
         production_rmse_rank=ordered_rmse.index(production_metric.rmse) + 1,
+        walk_forward_version=result.walk_forward_version,
+        walk_forward_rmse=walk_forward.rmse,
+        walk_forward_oos_r2=walk_forward.oos_r2_vs_zero,
+        walk_forward_directional_hit_rate=(
+            walk_forward.directional_hit_rate
+        ),
+        walk_forward_interval_coverage=walk_forward.interval_coverage,
+        walk_forward_mean_rank_ic=walk_forward.mean_rank_ic,
     )
     destination = Path(output_dir).expanduser().resolve()
     destination.mkdir(parents=True, exist_ok=True)
@@ -184,6 +200,7 @@ def comparison_warnings(
         ("data_version", "data version"),
         ("model_version", "model version"),
         ("challenger_version", "challenger-suite version"),
+        ("walk_forward_version", "walk-forward version"),
     )
     warnings = []
     for field, label in checks:
@@ -234,6 +251,15 @@ def comparison_records(
             "Best holdout model": item.challenger_leader_model_id or "Not recorded",
             "Production RMSE": item.production_rmse,
             "Production RMSE rank": item.production_rmse_rank,
+            "Walk-forward RMSE": item.walk_forward_rmse,
+            "Walk-forward OOS R²": item.walk_forward_oos_r2,
+            "Walk-forward direction": (
+                item.walk_forward_directional_hit_rate
+            ),
+            "Walk-forward coverage": (
+                item.walk_forward_interval_coverage
+            ),
+            "Mean monthly rank IC": item.walk_forward_mean_rank_ic,
             "Run ID": item.configuration_id,
         }
         for item in experiments
@@ -352,8 +378,30 @@ def _experiment_from_dict(payload: dict[str, object]) -> SavedExperiment:
             if payload.get("production_rmse_rank") is None
             else int(payload["production_rmse_rank"])
         ),
+        walk_forward_version=_optional_string(
+            payload.get("walk_forward_version")
+        ),
+        walk_forward_rmse=_optional_float(
+            payload.get("walk_forward_rmse")
+        ),
+        walk_forward_oos_r2=_optional_float(
+            payload.get("walk_forward_oos_r2")
+        ),
+        walk_forward_directional_hit_rate=_optional_float(
+            payload.get("walk_forward_directional_hit_rate")
+        ),
+        walk_forward_interval_coverage=_optional_float(
+            payload.get("walk_forward_interval_coverage")
+        ),
+        walk_forward_mean_rank_ic=_optional_float(
+            payload.get("walk_forward_mean_rank_ic")
+        ),
     )
 
 
 def _optional_string(value: object) -> str | None:
     return None if value is None else str(value)
+
+
+def _optional_float(value: object) -> float | None:
+    return None if value is None else float(value)

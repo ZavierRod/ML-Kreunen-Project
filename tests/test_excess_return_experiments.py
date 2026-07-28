@@ -57,6 +57,14 @@ def forecast_result(
         model_version="model-v1",
         reliability_version="reliability-v1",
         validation_version="validation-v1",
+        walk_forward_version="walk-v1",
+        walk_forward_diagnostics=SimpleNamespace(
+            rmse=0.09,
+            oos_r2_vs_zero=0.01,
+            directional_hit_rate=0.52,
+            interval_coverage=0.8,
+            mean_rank_ic=0.03,
+        ),
         challenger_version="challenger-v1",
         challenger_diagnostics=SimpleNamespace(
             leader_model_id="ols",
@@ -129,6 +137,7 @@ class ExperimentTests(unittest.TestCase):
             self.assertEqual(comparison[0]["Factors"], 2)
             self.assertEqual(comparison[0]["Best holdout model"], "ols")
             self.assertEqual(comparison[0]["Production RMSE rank"], 2)
+            self.assertEqual(comparison[0]["Walk-forward RMSE"], 0.09)
             self.assertEqual(
                 comparison[0]["Expected-return delta vs first"],
                 0.0,
@@ -156,6 +165,12 @@ class ExperimentTests(unittest.TestCase):
             payload.pop("challenger_leader_model_id")
             payload.pop("production_rmse")
             payload.pop("production_rmse_rank")
+            payload.pop("walk_forward_version")
+            payload.pop("walk_forward_rmse")
+            payload.pop("walk_forward_oos_r2")
+            payload.pop("walk_forward_directional_hit_rate")
+            payload.pop("walk_forward_interval_coverage")
+            payload.pop("walk_forward_mean_rank_ic")
             Path(path).write_text(json.dumps(payload), encoding="utf-8")
 
             listed = list_experiments(directory)
@@ -168,6 +183,7 @@ class ExperimentTests(unittest.TestCase):
             )
             self.assertIsNone(listed[0].challenger_version)
             self.assertIsNone(listed[0].production_rmse)
+            self.assertIsNone(listed[0].walk_forward_version)
 
 
 if __name__ == "__main__":

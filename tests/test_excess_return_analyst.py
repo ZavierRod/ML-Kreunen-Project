@@ -243,6 +243,45 @@ class ForecastAnalystTests(unittest.TestCase):
         self.assertTrue(replay["outcome_joined_after_forecast"])
         self.assertAlmostEqual(replay["forecast_error"], -0.018)
 
+    def test_context_includes_walk_forward_evidence(self) -> None:
+        result = forecast_result()
+        result.walk_forward_diagnostics = SimpleNamespace(
+            version="walk-v1",
+            evaluation_start="2024-01-31",
+            evaluation_end="2025-12-31",
+            evaluation_months=24,
+            evaluation_rows=100,
+            calibration_residual_rows=80,
+            mae=0.08,
+            rmse=0.12,
+            directional_hit_rate=0.52,
+            brier_score=0.249,
+            interval_coverage=0.79,
+            oos_r2_vs_zero=0.01,
+            mean_rank_ic=0.03,
+            monthly_metrics=(
+                SimpleNamespace(
+                    as_of_date="2025-12-31",
+                    target_month="2026-01-31",
+                    training_rows=1_000,
+                    evaluation_rows=100,
+                    mae=0.08,
+                    rmse=0.12,
+                    directional_hit_rate=0.52,
+                    brier_score=0.249,
+                    interval_coverage=0.79,
+                    rank_ic=0.03,
+                ),
+            ),
+        )
+
+        context = analyst.build_forecast_context(result)
+
+        evidence = context["walk_forward_evaluation"]
+        self.assertEqual(evidence["evaluation_months"], 24)
+        self.assertEqual(evidence["monthly_metrics"][0]["rank_ic"], 0.03)
+        self.assertIn("only earlier", evidence["method"])
+
     def test_api_call_is_non_stored_and_run_id_is_immutable(self) -> None:
         fake_responses = _FakeResponses()
         client = SimpleNamespace(responses=fake_responses)

@@ -386,6 +386,48 @@ def build_forecast_context(
                 for item in diagnostics.yearly_metrics
             ],
         }
+    walk_forward = getattr(result, "walk_forward_diagnostics", None)
+    if walk_forward is not None:
+        context["walk_forward_evaluation"] = {
+            "version": walk_forward.version,
+            "method": (
+                "expanding monthly refit; each prediction uses only earlier "
+                "realized outcomes"
+            ),
+            "evaluation_start": walk_forward.evaluation_start,
+            "evaluation_end": walk_forward.evaluation_end,
+            "evaluation_months": walk_forward.evaluation_months,
+            "evaluation_rows": walk_forward.evaluation_rows,
+            "calibration_residual_rows": (
+                walk_forward.calibration_residual_rows
+            ),
+            "mae": walk_forward.mae,
+            "rmse": walk_forward.rmse,
+            "directional_hit_rate": (
+                walk_forward.directional_hit_rate
+            ),
+            "brier_score": walk_forward.brier_score,
+            "interval_coverage": walk_forward.interval_coverage,
+            "oos_r2_vs_zero": walk_forward.oos_r2_vs_zero,
+            "mean_rank_ic": walk_forward.mean_rank_ic,
+            "monthly_metrics": [
+                {
+                    "as_of_date": item.as_of_date,
+                    "target_month": item.target_month,
+                    "training_rows": item.training_rows,
+                    "evaluation_rows": item.evaluation_rows,
+                    "mae": item.mae,
+                    "rmse": item.rmse,
+                    "directional_hit_rate": (
+                        item.directional_hit_rate
+                    ),
+                    "brier_score": item.brier_score,
+                    "interval_coverage": item.interval_coverage,
+                    "rank_ic": item.rank_ic,
+                }
+                for item in walk_forward.monthly_metrics
+            ],
+        }
     if replay_outcome is not None:
         realized_excess_return = float(
             getattr(replay_outcome, "realized_excess_return")

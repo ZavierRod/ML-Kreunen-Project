@@ -44,8 +44,13 @@ from .validation import (
     ValidationDiagnostics,
     build_validation_diagnostics,
 )
+from .walk_forward import (
+    WALK_FORWARD_VERSION,
+    WalkForwardDiagnostics,
+    evaluate_walk_forward,
+)
 
-MODEL_VERSION = "elastic-net-panel-v5"
+MODEL_VERSION = "elastic-net-panel-v6"
 TARGET_VERSION = "calendar-excess-return-v1"
 TARGET_COLUMN = "excess_return_next_month"
 MONTH_COLUMN = "month_end"
@@ -113,6 +118,7 @@ class ForecastResult:
     replay_version: str | None
     reliability_version: str
     validation_version: str
+    walk_forward_version: str
     feature_version: str
     target_version: str
     data_version: str
@@ -136,6 +142,7 @@ class ForecastResult:
     historical_evidence: HistoricalEvidence
     reliability: ReliabilityAssessment
     validation_diagnostics: ValidationDiagnostics
+    walk_forward_diagnostics: WalkForwardDiagnostics
     challenger_diagnostics: ChallengerDiagnostics
     model_parameters: dict[str, float]
     validation_metrics: dict[str, float | int]
@@ -153,6 +160,12 @@ class ForecastResult:
         ]
         result["historical_evidence"] = asdict(self.historical_evidence)
         return result
+
+
+@dataclass(frozen=True)
+class ForecastComputation:
+    result: ForecastResult
+    walk_forward_predictions: pd.DataFrame
 
 
 @dataclass(frozen=True)
@@ -405,6 +418,7 @@ def _configuration_id(
         "target_version": TARGET_VERSION,
         "reliability_version": RELIABILITY_VERSION,
         "validation_version": VALIDATION_VERSION,
+        "walk_forward_version": WALK_FORWARD_VERSION,
         "runtime_versions": runtime_versions(),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
@@ -582,12 +596,12 @@ def forecast_configuration_id(
     )
 
 
-def generate_forecast(
+def generate_forecast_computation(
     training_panel: pd.DataFrame,
     inference_panel: pd.DataFrame,
     request: ForecastRequest,
-) -> ForecastResult:
-    """Fit the selected-factor model and forecast one security's next month."""
+) -> ForecastComputation:
+    """Fit a forecast and retain its row-level walk-forward evaluation."""
     selected = validate_factor_selection(request.selected_factors)
     scope = _prepare_forecast_scope(
         training_panel,
@@ -696,6 +710,18 @@ def generate_forecast(
         target_column=TARGET_COLUMN,
         month_column=MONTH_COLUMN,
     )
+    walk_forward = evaluate_walk_forward(
+        historical=ranked_historical,
+        calibration_residual_frame=residual_fit,
+        selected_factors=selected,
+        target_column=TARGET_COLUMN,
+        month_column=MONTH_COLUMN,
+        alpha=best["alpha"],
+        l1_ratio=best["l1_ratio"],
+        interval_level=request.interval_level,
+        target_clip_quantiles=request.target_clip_quantiles,
+        evaluation_month_count=len(residual_eval_months),
+    )
     challenger_diagnostics = evaluate_challengers(
         training=pre_calibration,
         validation=residual_eval,
@@ -782,7 +808,7 @@ def generate_forecast(
         ),
     )
 
-    return ForecastResult(
+    result = ForecastResult(
         configuration_id=_configuration_id(
             request,
             as_of,
@@ -799,6 +825,7 @@ def generate_forecast(
         ),
         reliability_version=RELIABILITY_VERSION,
         validation_version=VALIDATION_VERSION,
+        walk_forward_version=WALK_FORWARD_VERSION,
         feature_version=FEATURE_VERSION,
         target_version=TARGET_VERSION,
         data_version=scope.data_version,
@@ -822,6 +849,7 @@ def generate_forecast(
         historical_evidence=historical_evidence,
         reliability=reliability,
         validation_diagnostics=validation_diagnostics,
+        walk_forward_diagnostics=walk_forward.diagnostics,
         challenger_diagnostics=challenger_diagnostics,
         model_parameters=best,
         validation_metrics=metrics,
@@ -835,6 +863,23 @@ def generate_forecast(
         },
         target_clip_bounds=final_clip_bounds,
     )
+    return ForecastComputation(
+        result=result,
+        walk_forward_predictions=walk_forward.predictions,
+    )
+
+
+def generate_forecast(
+    training_panel: pd.DataFrame,
+    inference_panel: pd.DataFrame,
+    request: ForecastRequest,
+) -> ForecastResult:
+    """Fit the selected-factor model and forecast one security's next month."""
+    return generate_forecast_computation(
+        training_panel,
+        inference_panel,
+        request,
+    ).result
 
 
 def _optional_string(value: object) -> str | None:

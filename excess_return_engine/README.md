@@ -153,6 +153,8 @@ The command prints and saves:
 - Nearest historical conditions and their realized excess-return distribution
 - Transparent model-reliability and data-quality scores with component evidence
 - Chronological holdout metrics
+- Expanding-window monthly metrics and rank information coefficient
+- A separately persisted row-level walk-forward prediction ledger
 - Selected hyperparameters
 - Data, target, feature, and model versions
 
@@ -166,6 +168,29 @@ residual distribution and leaves its final 24 months untouched for validation. T
 forecast record includes ten equal-count probability-calibration bins and
 outcome-year MAE, RMSE, direction, interval coverage, and actual-versus-predicted
 excess-return summaries.
+
+## Walk-forward evaluation
+
+`excess_return_engine/walk_forward.py` performs an expanding-window evaluation over
+the final 24 historical as-of months. For each month it:
+
+1. Fits Elastic Net using only security-month rows before that as-of month.
+2. Predicts the complete current cross-section before observing its outcomes.
+3. Calculates probability and interval outputs from residuals observed strictly
+   before that month.
+4. Records the realized outcome, residual, training cutoff, and training row count.
+5. Adds that month's outcomes only before advancing to the next month.
+
+The run artifact stores aggregate and monthly MAE, RMSE, directional hit rate,
+Brier score, interval coverage, out-of-sample R-squared versus zero, and rank IC.
+The complete calibration-plus-evaluation ledger is stored separately as
+`<run-id>.walk_forward.parquet`. Its row count and logical SHA-256 hash are included
+in the immutable run manifest and verified on every cache load. The ledger remains
+inside ignored local artifact storage because it contains licensed row-level
+research outputs.
+
+The fixed-origin holdout remains available for like-for-like challenger comparison.
+It is labeled separately from the expanding-window evidence in the UI.
 
 ## Reliability assessment
 
@@ -264,8 +289,9 @@ their underlying contracts differ.
 Applying a saved configuration restores its company, factor set, and prediction
 interval, including the training window and as-of date. Version 1 manifests load as
 all-available-history configurations, and versions 1 through 3 migrate to
-latest-snapshot mode; new saves use version 4. A configuration can be restored when
-its as-of cross-section exists in the loaded research panels.
+latest-snapshot mode. Version 4 manifests load without walk-forward comparison
+metrics; new saves use version 5. A configuration can be restored when its as-of
+cross-section exists in the loaded research panels.
 
 ## Historical as-of replay
 

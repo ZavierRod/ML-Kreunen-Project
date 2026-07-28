@@ -5,7 +5,10 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
+import pandas as pd
+
 from excess_return_engine.model import (
+    ForecastComputation,
     ForecastRequest,
     forecast_configuration_id,
     generate_forecast,
@@ -109,6 +112,27 @@ class ForecastRunTests(unittest.TestCase):
                 first.result.data_version,
             )
             self.assertEqual(payload["request"]["as_of_date"], "2022-12-31")
+            self.assertTrue(first.walk_forward_path.is_file())
+            self.assertEqual(
+                first.walk_forward_rows,
+                len(pd.read_parquet(first.walk_forward_path)),
+            )
+            self.assertEqual(
+                payload["walk_forward_predictions"]["content_sha256"],
+                first.walk_forward_sha256,
+            )
+            self.assertNotIn(
+                "walk_forward_predictions",
+                payload["result"],
+            )
+            self.assertEqual(
+                len(
+                    payload["result"]["walk_forward_diagnostics"][
+                        "monthly_metrics"
+                    ]
+                ),
+                6,
+            )
 
     def test_implicit_and_explicit_latest_as_of_share_cache(self) -> None:
         training, inference = synthetic_panels()
@@ -187,6 +211,27 @@ class ForecastRunTests(unittest.TestCase):
             self.assertEqual(repaired.cache_status, "repaired")
             self.assertEqual(repaired.cache_reason, "artifact is unreadable")
 
+    def test_corrupt_walk_forward_artifact_is_recomputed(self) -> None:
+        training, inference = synthetic_panels()
+        with tempfile.TemporaryDirectory() as directory:
+            first = execute_forecast(
+                training,
+                inference,
+                request(),
+                directory,
+            )
+            Path(first.walk_forward_path).write_bytes(b"broken")
+
+            repaired = execute_forecast(
+                training,
+                inference,
+                request(),
+                directory,
+            )
+
+            self.assertEqual(repaired.cache_status, "repaired")
+            self.assertTrue(repaired.walk_forward_path.is_file())
+
     def test_mismatched_recomputation_does_not_replace_immutable_run(self) -> None:
         training, inference = synthetic_panels()
         with tempfile.TemporaryDirectory() as directory:
@@ -203,10 +248,16 @@ class ForecastRunTests(unittest.TestCase):
                     first.result.expected_excess_return + 0.01
                 ),
             )
+            mismatched_computation = ForecastComputation(
+                result=mismatched,
+                walk_forward_predictions=pd.read_parquet(
+                    first.walk_forward_path
+                ).drop(columns=["configuration_id"]),
+            )
 
             with patch(
-                "excess_return_engine.runs.generate_forecast",
-                return_value=mismatched,
+                "excess_return_engine.runs.generate_forecast_computation",
+                return_value=mismatched_computation,
             ):
                 with self.assertRaisesRegex(
                     RuntimeError,

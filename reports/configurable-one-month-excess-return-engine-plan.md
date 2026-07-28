@@ -139,6 +139,18 @@ Implementation status:
 - On the real 120-month GOOGL configuration, run `22767630d60a2ae6` took `3.46`
   seconds to generate and `0.97` seconds to load from cache. The cached nested
   forecast record matched the generated result exactly.
+- Versioned expanding-window evaluation is implemented in
+  `excess_return_engine/walk_forward.py`. Each of the final 24 as-of months refits
+  Elastic Net using only earlier rows; probabilities and intervals use only
+  residuals available before the prediction month.
+- Run `ae1ae807a81dd896` persisted 97,504 calibration residual rows and 92,017
+  out-of-sample predictions in a 189,521-row ledger with an immutable logical
+  content hash. Every training cutoff preceded its prediction month, and every
+  target was the exact next calendar month.
+- The real walk-forward evidence remains appropriately modest: `8.70%` MAE,
+  `16.99%` RMSE, `48.77%` directional accuracy, `80.25%` interval coverage,
+  `0.11%` out-of-sample R-squared versus zero, and `-0.025` mean monthly rank IC.
+  The UI shows these results separately from the fixed-origin challenger holdout.
 - Delisting-return and actual fundamental-availability-date audits remain open.
 
 ## 1. Feature Summary

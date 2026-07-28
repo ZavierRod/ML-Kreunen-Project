@@ -340,6 +340,32 @@ def yearly_validation_table(result: ForecastResult) -> pd.DataFrame:
     )
 
 
+def walk_forward_monthly_table(result: ForecastResult) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "As of": item.as_of_date,
+                "Target month": item.target_month,
+                "Training rows": item.training_rows,
+                "Evaluation rows": item.evaluation_rows,
+                "MAE": item.mae,
+                "RMSE": item.rmse,
+                "Directional hit rate": item.directional_hit_rate,
+                "Brier score": item.brier_score,
+                "Interval coverage": item.interval_coverage,
+                "Rank IC": item.rank_ic,
+                "Mean actual excess return": (
+                    item.mean_actual_excess_return
+                ),
+                "Mean predicted excess return": (
+                    item.mean_predicted_excess_return
+                ),
+            }
+            for item in result.walk_forward_diagnostics.monthly_metrics
+        ]
+    )
+
+
 def challenger_diagnostics_table(result: ForecastResult) -> pd.DataFrame:
     diagnostics = result.challenger_diagnostics
     production = next(

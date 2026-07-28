@@ -52,6 +52,7 @@ from ui.excess_return_engine.presentation import (
     reliability_component_table,
     regime_summary,
     regime_table,
+    walk_forward_monthly_table,
     yearly_validation_table,
 )
 
@@ -293,6 +294,11 @@ def render_experiment_workspace(result) -> None:
                 "OOS R² vs zero": "{:+.2%}",
                 "Interval coverage": "{:.1%}",
                 "Production RMSE": "{:.2%}",
+                "Walk-forward RMSE": "{:.2%}",
+                "Walk-forward OOS R²": "{:+.2%}",
+                "Walk-forward direction": "{:.1%}",
+                "Walk-forward coverage": "{:.1%}",
+                "Mean monthly rank IC": "{:+.3f}",
             },
             na_rep="Not recorded",
         ),
@@ -744,6 +750,9 @@ if run_forecast:
                 "actor": execution.actor,
                 "created_by": execution.created_by,
                 "runtime_versions": execution.runtime_versions,
+                "walk_forward_artifact": execution.walk_forward_path.name,
+                "walk_forward_rows": execution.walk_forward_rows,
+                "walk_forward_sha256": execution.walk_forward_sha256,
             }
             st.session_state.pop("excess_return_error", None)
         except Exception as exc:
@@ -992,6 +1001,70 @@ with reliability_tab:
             width="stretch",
         )
 with validation_tab:
+    walk_forward = result.walk_forward_diagnostics
+    st.markdown("**Expanding-window walk-forward evaluation**")
+    walk_forward_columns = st.columns(4)
+    walk_forward_columns[0].metric(
+        "Walk-forward MAE",
+        format_probability(walk_forward.mae),
+    )
+    walk_forward_columns[1].metric(
+        "Walk-forward RMSE",
+        format_probability(walk_forward.rmse),
+    )
+    walk_forward_columns[2].metric(
+        "OOS R² vs zero",
+        format_percent(walk_forward.oos_r2_vs_zero, digits=2),
+    )
+    walk_forward_columns[3].metric(
+        "Mean monthly rank IC",
+        (
+            "Not available"
+            if walk_forward.mean_rank_ic is None
+            else f"{walk_forward.mean_rank_ic:+.3f}"
+        ),
+    )
+    walk_forward_quality_columns = st.columns(3)
+    walk_forward_quality_columns[0].metric(
+        "Directional hit rate",
+        format_probability(walk_forward.directional_hit_rate),
+    )
+    walk_forward_quality_columns[1].metric(
+        "Probability Brier score",
+        f"{walk_forward.brier_score:.4f}",
+    )
+    walk_forward_quality_columns[2].metric(
+        "Interval coverage",
+        format_probability(walk_forward.interval_coverage),
+    )
+    st.caption(
+        f"Monthly refits from {walk_forward.evaluation_start} through "
+        f"{walk_forward.evaluation_end} · "
+        f"{walk_forward.evaluation_rows:,} out-of-sample predictions · "
+        "each month uses only previously realized outcomes."
+    )
+    walk_forward_table = walk_forward_monthly_table(result)
+    st.dataframe(
+        walk_forward_table.style.format(
+            {
+                "Training rows": "{:,.0f}",
+                "Evaluation rows": "{:,.0f}",
+                "MAE": "{:.2%}",
+                "RMSE": "{:.2%}",
+                "Directional hit rate": "{:.1%}",
+                "Brier score": "{:.4f}",
+                "Interval coverage": "{:.1%}",
+                "Rank IC": "{:+.3f}",
+                "Mean actual excess return": "{:+.2%}",
+                "Mean predicted excess return": "{:+.2%}",
+            },
+            na_rep="Not available",
+        ),
+        hide_index=True,
+        width="stretch",
+        height=360,
+    )
+    st.markdown("**Fixed-origin holdout and challenger comparison**")
     metrics = result.validation_metrics
     validation_columns = st.columns(4)
     validation_columns[0].metric("Holdout MAE", format_probability(float(metrics["mae"])))
@@ -1125,6 +1198,7 @@ with data_tab:
         f"Features: {result.feature_version} · Model: {result.model_version} · "
         f"Reliability: {result.reliability_version} · "
         f"Validation: {result.validation_version} · "
+        f"Walk forward: {result.walk_forward_version} · "
         f"Challengers: {result.challenger_version} · "
         f"Replay: {result.replay_version or 'not applicable'}"
     )
@@ -1142,6 +1216,13 @@ with data_tab:
             f"Runtime: Python {versions['python']} · "
             f"numpy {versions['numpy']} · pandas {versions['pandas']} · "
             f"scikit-learn {versions['scikit-learn']}"
+        )
+        st.caption(
+            f"Walk-forward ledger: "
+            f"{execution_metadata['walk_forward_artifact']} · "
+            f"{execution_metadata['walk_forward_rows']:,} rows · "
+            f"SHA-256 "
+            f"{execution_metadata['walk_forward_sha256'][:16]}..."
         )
 
 render_experiment_workspace(result)
