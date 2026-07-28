@@ -1,0 +1,358 @@
+"""Local Streamlit workflow for configurable one-month excess-return forecasts."""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+from pathlib import Path
+
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
+
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from excess_return_engine.features import FACTOR_IDS, FACTOR_REGISTRY
+from excess_return_engine.model import ForecastRequest, generate_forecast
+from ui.excess_return_engine.presentation import (
+    FACTOR_PRESETS,
+    company_options,
+    configuration_quality,
+    contribution_table,
+    factor_option_label,
+    predictive_strength_label,
+)
+
+DEFAULT_ARTIFACT_DIR = ROOT / "local_artifacts" / "excess_return_engine"
+ARTIFACT_DIR = Path(
+    os.getenv("EXCESS_RETURN_ARTIFACT_DIR", str(DEFAULT_ARTIFACT_DIR))
+).expanduser()
+
+st.set_page_config(
+    page_title="One-Month Excess Return",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+st.markdown(
+    """
+    <style>
+    .block-container {padding-top: 2.5rem; padding-bottom: 3rem;}
+    [data-testid="stMetric"] {
+        border-top: 2px solid #d1d5db;
+        padding-top: 0.65rem;
+    }
+    [data-testid="stMetricValue"] {font-size: 1.65rem;}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+@st.cache_resource(show_spinner=False)
+def load_research_panels(artifact_dir: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    directory = Path(artifact_dir)
+    training_path = directory / "training_panel.parquet"
+    inference_path = directory / "inference_panel.parquet"
+    if not training_path.is_file() or not inference_path.is_file():
+        raise FileNotFoundError(
+            "The local training and inference panels have not been built."
+        )
+    return pd.read_parquet(training_path), pd.read_parquet(inference_path)
+
+
+def format_percent(value: float, digits: int = 1) -> str:
+    return f"{value * 100:+.{digits}f}%"
+
+
+def format_probability(value: float) -> str:
+    return f"{value * 100:.1f}%"
+
+
+def contribution_chart(table: pd.DataFrame) -> go.Figure:
+    data = table.sort_values("contribution")
+    colors = ["#b91c1c" if value < 0 else "#047857" for value in data["contribution"]]
+    figure = go.Figure(
+        go.Bar(
+            x=data["contribution"] * 100,
+            y=data["factor"],
+            orientation="h",
+            marker_color=colors,
+            text=(data["contribution"] * 100).map(lambda value: f"{value:+.2f}%"),
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate=(
+                "<b>%{y}</b><br>Contribution: %{x:+.3f}%<extra></extra>"
+            ),
+        )
+    )
+    figure.add_vline(x=0, line_color="#6b7280", line_width=1)
+    figure.update_layout(
+        height=max(320, 52 * len(data)),
+        margin=dict(l=10, r=70, t=15, b=35),
+        xaxis_title="Contribution to expected excess return (%)",
+        yaxis_title=None,
+        showlegend=False,
+    )
+    return figure
+
+
+st.title("One-Month Excess Return")
+
+try:
+    training_panel, inference_panel = load_research_panels(str(ARTIFACT_DIR))
+except Exception as exc:
+    st.error(str(exc))
+    st.caption(f"Expected local artifact directory: {ARTIFACT_DIR}")
+    st.stop()
+
+as_of = pd.Timestamp(inference_panel["month_end"].max())
+target_month = pd.Timestamp(inference_panel["target_month"].max())
+benchmark_ids = inference_panel["benchmark_id"].dropna().astype(str).unique()
+benchmark_id = benchmark_ids[0] if len(benchmark_ids) == 1 else "Multiple benchmarks"
+
+options = company_options(inference_panel)
+option_lookup = dict(options)
+default_index = next(
+    (index for index, (label, _) in enumerate(options) if label.startswith("GOOGL ·")),
+    0,
+)
+
+with st.sidebar:
+    st.header("Forecast Configuration")
+    selected_company = st.selectbox(
+        "Company",
+        options=[label for label, _ in options],
+        index=default_index,
+    )
+    permno = option_lookup[selected_company]
+
+    preset = st.segmented_control(
+        "Factor preset",
+        options=list(FACTOR_PRESETS),
+        default="Balanced",
+        width="stretch",
+    )
+    preset_key = preset or "Balanced"
+    if st.session_state.get("_last_forecast_preset") != preset_key:
+        st.session_state["forecast_factors"] = list(FACTOR_PRESETS[preset_key])
+        st.session_state["_last_forecast_preset"] = preset_key
+
+    selected_factors = st.multiselect(
+        "Selected factors",
+        options=list(FACTOR_IDS),
+        key="forecast_factors",
+        format_func=factor_option_label,
+    )
+    interval_level = st.select_slider(
+        "Prediction interval",
+        options=[0.70, 0.80, 0.90],
+        value=0.80,
+        format_func=lambda value: f"{value:.0%}",
+    )
+
+    st.divider()
+    st.caption(f"As of {as_of.date().isoformat()}")
+    st.caption(f"Target month {target_month.date().isoformat()}")
+    st.caption(f"Benchmark {benchmark_id}")
+
+quality = configuration_quality(
+    training_panel,
+    inference_panel,
+    permno,
+    tuple(selected_factors),
+)
+
+config_columns = st.columns(4)
+config_columns[0].metric("Selected factors", len(selected_factors))
+config_columns[1].metric("Training months", int(quality["training_months"]))
+config_columns[2].metric(
+    "Current completeness",
+    format_probability(float(quality["current_completeness"])),
+)
+config_columns[3].metric(
+    "Historical coverage",
+    format_probability(float(quality["historical_coverage"])),
+)
+
+if quality["status"] == "blocked":
+    st.error(str(quality["message"]))
+else:
+    st.caption(str(quality["message"]))
+
+run_forecast = st.button(
+    "Run forecast",
+    type="primary",
+    icon=":material/query_stats:",
+    disabled=quality["status"] != "ready",
+)
+
+if run_forecast:
+    request = ForecastRequest(
+        permno=permno,
+        selected_factors=tuple(selected_factors),
+        interval_level=interval_level,
+    )
+    with st.spinner("Fitting selected-factor model and calibrating uncertainty..."):
+        try:
+            st.session_state["excess_return_result"] = generate_forecast(
+                training_panel,
+                inference_panel,
+                request,
+            )
+            st.session_state.pop("excess_return_error", None)
+        except Exception as exc:
+            st.session_state["excess_return_error"] = str(exc)
+
+if st.session_state.get("excess_return_error"):
+    st.error(st.session_state["excess_return_error"])
+
+result = st.session_state.get("excess_return_result")
+result_matches_configuration = (
+    result is not None
+    and result.permno == permno
+    and result.selected_factors == tuple(selected_factors)
+    and result.interval_level == interval_level
+)
+if not result_matches_configuration:
+    st.subheader("Configuration")
+    selected_table = pd.DataFrame(
+        [
+            {
+                "Factor": FACTOR_REGISTRY[factor].label,
+                "Category": FACTOR_REGISTRY[factor].category,
+                "Availability": FACTOR_REGISTRY[factor].availability_rule,
+            }
+            for factor in selected_factors
+        ]
+    )
+    st.dataframe(selected_table, hide_index=True, width="stretch")
+    st.stop()
+
+st.subheader(f"{result.ticker} Forecast")
+headline = st.columns(4)
+headline[0].metric(
+    "Expected excess return",
+    format_percent(result.expected_excess_return),
+)
+headline[1].metric(
+    "Probability positive",
+    format_probability(result.probability_positive),
+)
+headline[2].metric(
+    f"{result.interval_level:.0%} prediction interval",
+    (
+        f"{format_percent(result.interval_lower)} to "
+        f"{format_percent(result.interval_upper)}"
+    ),
+)
+headline[3].metric(
+    "Predictive strength",
+    predictive_strength_label(result.validation_metrics),
+)
+
+st.caption(
+    f"Benchmark: {result.benchmark_id} · As of: {result.as_of_date} · "
+    f"Target: {result.target_month} · Run: {result.configuration_id}"
+)
+
+contributions = contribution_table(result)
+contribution_tab, validation_tab, data_tab = st.tabs(
+    ["Contributions", "Validation", "Data quality"]
+)
+with contribution_tab:
+    left, right = st.columns([1.25, 0.75])
+    with left:
+        st.plotly_chart(
+            contribution_chart(contributions),
+            width="stretch",
+            config={"displayModeBar": False},
+        )
+    with right:
+        display = contributions[
+            ["factor", "category", "normalized_value", "coefficient", "contribution"]
+        ].copy()
+        display.columns = [
+            "Factor",
+            "Category",
+            "Normalized value",
+            "Coefficient",
+            "Contribution",
+        ]
+        st.dataframe(
+            display.style.format(
+                {
+                    "Normalized value": "{:+.3f}",
+                    "Coefficient": "{:+.4f}",
+                    "Contribution": "{:+.2%}",
+                }
+            ),
+            hide_index=True,
+            width="stretch",
+            height=390,
+        )
+with validation_tab:
+    metrics = result.validation_metrics
+    validation_columns = st.columns(4)
+    validation_columns[0].metric("Holdout MAE", format_probability(float(metrics["mae"])))
+    validation_columns[1].metric("Holdout RMSE", format_probability(float(metrics["rmse"])))
+    validation_columns[2].metric(
+        "Directional hit rate",
+        format_probability(float(metrics["directional_hit_rate"])),
+    )
+    validation_columns[3].metric(
+        "Interval coverage",
+        format_probability(float(metrics["interval_coverage"])),
+    )
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {"Metric": "Brier score", "Value": float(metrics["brier_score"])},
+                {
+                    "Metric": "OOS R² vs zero",
+                    "Value": float(metrics["oos_r2_vs_zero"]),
+                },
+                {
+                    "Metric": "Evaluation observations",
+                    "Value": int(metrics["evaluation_rows"]),
+                },
+                {
+                    "Metric": "Evaluation months",
+                    "Value": int(metrics["evaluation_months"]),
+                },
+            ]
+        ),
+        hide_index=True,
+        width="stretch",
+    )
+with data_tab:
+    quality_rows = [
+        {"Component": key.replace("_", " ").title(), "Value": value}
+        for key, value in result.data_quality.items()
+    ]
+    st.dataframe(pd.DataFrame(quality_rows), hide_index=True, width="stretch")
+    st.caption(
+        f"Data: {result.data_version} · Target: {result.target_version} · "
+        f"Features: {result.feature_version} · Model: {result.model_version}"
+    )
+
+st.download_button(
+    "Download forecast JSON",
+    data=(json.dumps(result.to_dict(), indent=2, sort_keys=True) + "\n").encode(),
+    file_name=f"{result.ticker}_{result.target_month}_excess_return.json",
+    mime="application/json",
+    icon=":material/download:",
+)
+
+st.warning(
+    "Research output. The benchmark is the lagged-cap-weighted covered universe, "
+    "fundamental timing uses the documented research lag proxy, and explicit "
+    "delisting-return integration remains pending."
+)

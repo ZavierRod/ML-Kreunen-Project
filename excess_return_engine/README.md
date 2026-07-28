@@ -106,3 +106,24 @@ all historical rows before forecasting the requested security.
 Forecasts are research outputs. The current benchmark is the lagged-cap-weighted
 covered universe, fundamentals use the documented availability-lag proxy, and
 explicit CRSP delisting returns are still pending an additional source extract.
+
+## Run the local research UI
+
+The Streamlit workflow reads the ignored research panels from
+`local_artifacts/excess_return_engine/` by default:
+
+```bash
+OMP_NUM_THREADS=1 \
+OPENBLAS_NUM_THREADS=1 \
+VECLIB_MAXIMUM_THREADS=1 \
+python -m streamlit run ui/excess_return_engine/app.py
+```
+
+Set `EXCESS_RETURN_ARTIFACT_DIR` to use a different local panel directory. The UI
+supports permanent-security company selection, factor presets and custom factor
+sets, configurable prediction intervals, pre-run data-quality gates, contribution
+attribution, validation metrics, version metadata, and JSON export.
+
+This research UI is intentionally separate from the public Streamlit deployment.
+The licensed WRDS-derived panels remain local and must not be committed to Git or
+bundled into a public application.

@@ -41,6 +41,17 @@ Implementation status:
   holdout produced 78.7% interval coverage for the requested 80% interval and
   0.23% out-of-sample R-squared versus zero, reinforcing that outputs must display
   measured uncertainty and modest predictive strength.
+- A separate local Streamlit research workflow is implemented in
+  `ui/excess_return_engine/app.py`. It provides company selection by permanent
+  security ID, factor presets and custom factor sets, configurable intervals,
+  pre-run quality gates, headline forecast outputs, contribution attribution,
+  validation and data-quality views, and reproducible JSON export.
+- The research workflow was exercised end to end with a real GOOGL forecast and
+  browser-verified at 1440-pixel desktop and 390-pixel mobile widths with no page
+  overflow or browser errors.
+- The local UI reads only ignored research artifacts and is deliberately separate
+  from the public Streamlit deployment so licensed WRDS-derived data is not
+  published.
 - Delisting-return and actual fundamental-availability-date audits remain open.
 
 ## 1. Feature Summary
