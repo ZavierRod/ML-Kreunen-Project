@@ -94,6 +94,8 @@ The command prints and saves:
 - Probability of a positive excess return
 - Empirical 80% prediction interval
 - Factor-level contributions and normalized values
+- Current percentile regime for every selected factor
+- Nearest historical conditions and their realized excess-return distribution
 - Chronological holdout metrics
 - Selected hyperparameters
 - Data, target, feature, and model versions
@@ -122,7 +124,8 @@ python -m streamlit run ui/excess_return_engine/app.py
 Set `EXCESS_RETURN_ARTIFACT_DIR` to use a different local panel directory. The UI
 supports permanent-security company selection, factor presets and custom factor
 sets, configurable prediction intervals, pre-run data-quality gates, contribution
-attribution, validation metrics, version metadata, and JSON export.
+attribution, current factor regimes, historical analog outcomes, validation
+metrics, version metadata, and JSON export.
 
 This research UI is intentionally separate from the public Streamlit deployment.
 The licensed WRDS-derived panels remain local and must not be committed to Git or

@@ -52,6 +52,13 @@ Implementation status:
 - The local UI reads only ignored research artifacts and is deliberately separate
   from the public Streamlit deployment so licensed WRDS-derived data is not
   published.
+- Current factor regimes and similar-condition evidence are implemented in
+  `excess_return_engine/evidence.py`. Regimes are explicit percentile buckets;
+  analogs are the 20 nearest historical security-months by root-mean-square
+  distance in the same normalized selected-factor space used by the model.
+- Forecast records now include each analog's realized next-month excess return plus
+  the analog set's mean, median, positive-outcome rate, and 10th-to-90th percentile
+  range. The local UI exposes the complete evidence in a dedicated tab.
 - Delisting-return and actual fundamental-availability-date audits remain open.
 
 ## 1. Feature Summary

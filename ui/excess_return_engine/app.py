@@ -27,7 +27,10 @@ from ui.excess_return_engine.presentation import (
     configuration_quality,
     contribution_table,
     factor_option_label,
+    historical_analog_table,
     predictive_strength_label,
+    regime_summary,
+    regime_table,
 )
 
 DEFAULT_ARTIFACT_DIR = ROOT / "local_artifacts" / "excess_return_engine"
@@ -264,8 +267,8 @@ st.caption(
 )
 
 contributions = contribution_table(result)
-contribution_tab, validation_tab, data_tab = st.tabs(
-    ["Contributions", "Validation", "Data quality"]
+contribution_tab, evidence_tab, validation_tab, data_tab = st.tabs(
+    ["Contributions", "Regime & analogs", "Validation", "Data quality"]
 )
 with contribution_tab:
     left, right = st.columns([1.25, 0.75])
@@ -298,6 +301,52 @@ with contribution_tab:
             width="stretch",
             height=390,
         )
+with evidence_tab:
+    st.subheader("Current factor regime")
+    st.caption(regime_summary(result))
+    st.dataframe(
+        regime_table(result).style.format({"Percentile": "{:.0%}"}),
+        hide_index=True,
+        width="stretch",
+    )
+
+    evidence = result.historical_evidence
+    st.subheader("Historical outcomes under similar conditions")
+    evidence_columns = st.columns(4)
+    evidence_columns[0].metric(
+        "Mean excess return",
+        format_percent(evidence.mean_excess_return),
+    )
+    evidence_columns[1].metric(
+        "Median excess return",
+        format_percent(evidence.median_excess_return),
+    )
+    evidence_columns[2].metric(
+        "Positive outcomes",
+        format_probability(evidence.probability_positive),
+    )
+    evidence_columns[3].metric(
+        "10th–90th percentile",
+        (
+            f"{format_percent(evidence.tenth_percentile)} to "
+            f"{format_percent(evidence.ninetieth_percentile)}"
+        ),
+    )
+    st.caption(
+        f"{evidence.neighbor_count} nearest historical security-months in the "
+        "selected normalized factor space."
+    )
+    st.dataframe(
+        historical_analog_table(result).style.format(
+            {
+                "Similarity": "{:.1%}",
+                "Observed excess return": "{:+.2%}",
+            }
+        ),
+        hide_index=True,
+        width="stretch",
+        height=390,
+    )
 with validation_tab:
     metrics = result.validation_metrics
     validation_columns = st.columns(4)
@@ -334,7 +383,7 @@ with validation_tab:
     )
 with data_tab:
     quality_rows = [
-        {"Component": key.replace("_", " ").title(), "Value": value}
+        {"Component": key.replace("_", " ").title(), "Value": str(value)}
         for key, value in result.data_quality.items()
     ]
     st.dataframe(pd.DataFrame(quality_rows), hide_index=True, width="stretch")

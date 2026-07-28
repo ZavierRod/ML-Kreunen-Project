@@ -142,6 +142,48 @@ def contribution_table(result: ForecastResult) -> pd.DataFrame:
     )
 
 
+def regime_summary(result: ForecastResult, limit: int = 2) -> str:
+    strongest = sorted(
+        result.current_regime,
+        key=lambda item: abs(item.normalized_value),
+        reverse=True,
+    )[:limit]
+    return " · ".join(
+        f"{item.regime} {FACTOR_REGISTRY[item.factor_id].label}"
+        for item in strongest
+    )
+
+
+def regime_table(result: ForecastResult) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "Factor": FACTOR_REGISTRY[item.factor_id].label,
+                "Category": FACTOR_REGISTRY[item.factor_id].category,
+                "Percentile": item.percentile,
+                "Regime": item.regime,
+            }
+            for item in result.current_regime
+        ]
+    ).sort_values("Percentile", ascending=False)
+
+
+def historical_analog_table(result: ForecastResult) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "Ticker": analog.ticker or "N/A",
+                "Company": analog.company or "Unknown",
+                "Observation month": analog.month_end,
+                "Outcome month": analog.target_month,
+                "Similarity": analog.similarity,
+                "Observed excess return": analog.observed_excess_return,
+            }
+            for analog in result.historical_evidence.analogs
+        ]
+    )
+
+
 def predictive_strength_label(metrics: dict[str, float | int]) -> str:
     r2 = float(metrics["oos_r2_vs_zero"])
     directional = float(metrics["directional_hit_rate"])

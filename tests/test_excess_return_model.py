@@ -3,6 +3,10 @@ import unittest
 import numpy as np
 import pandas as pd
 
+from excess_return_engine.evidence import (
+    classify_factor_regimes,
+    find_similar_conditions,
+)
 from excess_return_engine.model import (
     ForecastRequest,
     _empirical_probability_positive,
@@ -53,6 +57,59 @@ def synthetic_panels() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 class ForecastTests(unittest.TestCase):
+    def test_regimes_are_explicit_cross_sectional_buckets(self) -> None:
+        regimes = classify_factor_regimes(
+            ("size", "momentum_12_1"),
+            np.array([0.8, -0.8]),
+        )
+
+        self.assertEqual(regimes[0].regime, "Top quintile")
+        self.assertEqual(regimes[0].percentile, 0.9)
+        self.assertEqual(regimes[1].regime, "Bottom quintile")
+        self.assertAlmostEqual(regimes[1].percentile, 0.1)
+
+    def test_historical_evidence_uses_nearest_normalized_rows(self) -> None:
+        historical = pd.DataFrame(
+            [
+                {
+                    "permno": 1,
+                    "month_end": "2024-01-31",
+                    "size": 0.10,
+                    "momentum_12_1": 0.10,
+                    "excess_return_next_month": 0.03,
+                },
+                {
+                    "permno": 2,
+                    "month_end": "2024-01-31",
+                    "size": 0.90,
+                    "momentum_12_1": 0.90,
+                    "excess_return_next_month": -0.02,
+                },
+                {
+                    "permno": 3,
+                    "month_end": "2024-02-29",
+                    "size": 0.20,
+                    "momentum_12_1": 0.20,
+                    "excess_return_next_month": 0.01,
+                },
+            ]
+        )
+
+        evidence = find_similar_conditions(
+            historical,
+            ("size", "momentum_12_1"),
+            np.array([0.0, 0.0]),
+            neighbor_count=2,
+            target_column="excess_return_next_month",
+        )
+
+        self.assertEqual(
+            [analog.permno for analog in evidence.analogs],
+            [1, 3],
+        )
+        self.assertAlmostEqual(evidence.mean_excess_return, 0.02)
+        self.assertEqual(evidence.probability_positive, 1.0)
+
     def test_empirical_probability_does_not_require_an_outer_matrix(self) -> None:
         predictions = np.array([-0.05, 0.00, 0.05])
         residuals = np.array([-0.02, 0.01, 0.10])
@@ -90,6 +147,9 @@ class ForecastTests(unittest.TestCase):
         self.assertLessEqual(result.probability_positive, 1)
         self.assertEqual(result.data_quality["selected_factor_completeness"], 1.0)
         self.assertIn("interval_coverage", result.validation_metrics)
+        self.assertEqual(len(result.current_regime), 2)
+        self.assertEqual(result.historical_evidence.neighbor_count, 20)
+        self.assertEqual(len(result.historical_evidence.analogs), 20)
 
     def test_forecast_requires_enough_history(self) -> None:
         training, inference = synthetic_panels()

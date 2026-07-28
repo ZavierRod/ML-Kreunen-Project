@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 
 import pandas as pd
 
@@ -6,7 +7,10 @@ from ui.excess_return_engine.presentation import (
     company_options,
     configuration_quality,
     factor_option_label,
+    historical_analog_table,
     predictive_strength_label,
+    regime_summary,
+    regime_table,
 )
 
 
@@ -67,6 +71,43 @@ class PresentationTests(unittest.TestCase):
             ),
             "Modest",
         )
+
+    def test_regime_and_analog_tables_are_readable(self) -> None:
+        result = SimpleNamespace(
+            current_regime=(
+                SimpleNamespace(
+                    factor_id="size",
+                    normalized_value=0.8,
+                    percentile=0.9,
+                    regime="Top quintile",
+                ),
+                SimpleNamespace(
+                    factor_id="momentum_12_1",
+                    normalized_value=-0.6,
+                    percentile=0.2,
+                    regime="Bottom quintile",
+                ),
+            ),
+            historical_evidence=SimpleNamespace(
+                analogs=(
+                    SimpleNamespace(
+                        ticker="AAA",
+                        company="Alpha",
+                        month_end="2024-01-31",
+                        target_month="2024-02-29",
+                        similarity=0.95,
+                        observed_excess_return=0.02,
+                    ),
+                )
+            ),
+        )
+
+        self.assertEqual(
+            regime_summary(result),
+            "Top quintile Size · Bottom quintile 12-1 momentum",
+        )
+        self.assertEqual(regime_table(result).iloc[0]["Factor"], "Size")
+        self.assertEqual(historical_analog_table(result).iloc[0]["Ticker"], "AAA")
 
 
 if __name__ == "__main__":

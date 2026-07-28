@@ -18,6 +18,12 @@ from .features import (
     ranked_factor_column,
     validate_factor_selection,
 )
+from .evidence import (
+    FactorRegime,
+    HistoricalEvidence,
+    classify_factor_regimes,
+    find_similar_conditions,
+)
 
 MODEL_VERSION = "elastic-net-panel-v1"
 TARGET_VERSION = "calendar-excess-return-v1"
@@ -36,6 +42,7 @@ class ForecastRequest:
     calibration_months: int = 24
     minimum_training_months: int = 60
     maximum_tuning_rows: int = 150_000
+    similar_observations: int = 20
     target_clip_quantiles: tuple[float, float] = (0.001, 0.999)
     alpha_grid: tuple[float, ...] = (0.00001, 0.0001, 0.001)
     l1_ratio_grid: tuple[float, ...] = (0.1, 0.5, 0.9)
@@ -48,6 +55,8 @@ class ForecastRequest:
             raise ValueError("tuning_months must be positive and calibration_months >= 4")
         if self.maximum_tuning_rows < 1:
             raise ValueError("maximum_tuning_rows must be positive")
+        if self.similar_observations < 1:
+            raise ValueError("similar_observations must be positive")
         lower, upper = self.target_clip_quantiles
         if not 0 <= lower < upper <= 1:
             raise ValueError("target_clip_quantiles must be ordered within [0, 1]")
@@ -88,6 +97,8 @@ class ForecastResult:
     interval_upper: float
     intercept: float
     contributions: tuple[FactorContribution, ...]
+    current_regime: tuple[FactorRegime, ...]
+    historical_evidence: HistoricalEvidence
     model_parameters: dict[str, float]
     validation_metrics: dict[str, float | int]
     data_quality: dict[str, float | int | str]
@@ -99,6 +110,10 @@ class ForecastResult:
         result["contributions"] = [
             asdict(contribution) for contribution in self.contributions
         ]
+        result["current_regime"] = [
+            asdict(regime) for regime in self.current_regime
+        ]
+        result["historical_evidence"] = asdict(self.historical_evidence)
         return result
 
 
@@ -316,6 +331,7 @@ def _configuration_id(
         "calibration_months": request.calibration_months,
         "minimum_training_months": request.minimum_training_months,
         "maximum_tuning_rows": request.maximum_tuning_rows,
+        "similar_observations": request.similar_observations,
         "target_clip_quantiles": list(request.target_clip_quantiles),
         "alpha_grid": list(request.alpha_grid),
         "l1_ratio_grid": list(request.l1_ratio_grid),
@@ -467,6 +483,14 @@ def generate_forecast(
         )[0]
     )
     normalized_values = x_current[0]
+    current_regime = classify_factor_regimes(selected, normalized_values)
+    historical_evidence = find_similar_conditions(
+        ranked_historical,
+        selected,
+        normalized_values,
+        request.similar_observations,
+        TARGET_COLUMN,
+    )
     contributions = tuple(
         FactorContribution(
             factor_id=factor_id,
@@ -531,6 +555,8 @@ def generate_forecast(
         interval_upper=point_forecast + residual_bounds[1],
         intercept=float(final_model.intercept_),
         contributions=contributions,
+        current_regime=current_regime,
+        historical_evidence=historical_evidence,
         model_parameters=best,
         validation_metrics=metrics,
         data_quality={
