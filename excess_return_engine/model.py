@@ -29,6 +29,11 @@ from .reliability import (
     ReliabilityAssessment,
     assess_reliability,
 )
+from .validation import (
+    VALIDATION_VERSION,
+    ValidationDiagnostics,
+    build_validation_diagnostics,
+)
 
 MODEL_VERSION = "elastic-net-panel-v1"
 TARGET_VERSION = "calendar-excess-return-v1"
@@ -44,7 +49,7 @@ class ForecastRequest:
     as_of_date: str | None = None
     interval_level: float = 0.80
     tuning_months: int = 12
-    calibration_months: int = 24
+    calibration_months: int = 48
     minimum_training_months: int = 60
     maximum_tuning_rows: int = 150_000
     similar_observations: int = 20
@@ -86,6 +91,7 @@ class ForecastResult:
     configuration_id: str
     model_version: str
     reliability_version: str
+    validation_version: str
     feature_version: str
     target_version: str
     data_version: str
@@ -106,6 +112,7 @@ class ForecastResult:
     current_regime: tuple[FactorRegime, ...]
     historical_evidence: HistoricalEvidence
     reliability: ReliabilityAssessment
+    validation_diagnostics: ValidationDiagnostics
     model_parameters: dict[str, float]
     validation_metrics: dict[str, float | int]
     data_quality: dict[str, float | int | str]
@@ -296,7 +303,7 @@ def _validation_metrics(
     calibration_residuals: np.ndarray,
     residual_bounds: tuple[float, float],
     baseline_probability: float,
-) -> dict[str, float | int]:
+) -> tuple[dict[str, float | int], np.ndarray]:
     actual = validation[TARGET_COLUMN].to_numpy(dtype=float)
     residual = actual - predictions
     probability = _empirical_probability_positive(
@@ -324,7 +331,7 @@ def _validation_metrics(
         ),
         "interval_coverage": float(np.mean(covered)),
         "oos_r2_vs_zero": oos_r2,
-    }
+    }, probability
 
 
 def _configuration_id(
@@ -352,6 +359,7 @@ def _configuration_id(
         "model_version": MODEL_VERSION,
         "target_version": TARGET_VERSION,
         "reliability_version": RELIABILITY_VERSION,
+        "validation_version": VALIDATION_VERSION,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()[:16]
@@ -470,7 +478,7 @@ def generate_forecast(
         float(np.quantile(calibration_residuals, tail_probability)),
         float(np.quantile(calibration_residuals, 1 - tail_probability)),
     )
-    metrics = _validation_metrics(
+    metrics, validation_probabilities = _validation_metrics(
         residual_eval,
         residual_eval["_prediction"].to_numpy(dtype=float),
         calibration_residuals,
@@ -478,6 +486,14 @@ def generate_forecast(
         baseline_probability=float(
             np.mean(residual_fit[TARGET_COLUMN].to_numpy(dtype=float) > 0)
         ),
+    )
+    validation_diagnostics = build_validation_diagnostics(
+        validation=residual_eval,
+        predictions=residual_eval["_prediction"].to_numpy(dtype=float),
+        probabilities=validation_probabilities,
+        residual_bounds=residual_bounds,
+        target_column=TARGET_COLUMN,
+        month_column=MONTH_COLUMN,
     )
 
     y_all_raw = ranked_historical[TARGET_COLUMN].to_numpy(dtype=float)
@@ -573,6 +589,7 @@ def generate_forecast(
         ),
         model_version=MODEL_VERSION,
         reliability_version=RELIABILITY_VERSION,
+        validation_version=VALIDATION_VERSION,
         feature_version=FEATURE_VERSION,
         target_version=TARGET_VERSION,
         data_version=data_version,
@@ -593,6 +610,7 @@ def generate_forecast(
         current_regime=current_regime,
         historical_evidence=historical_evidence,
         reliability=reliability,
+        validation_diagnostics=validation_diagnostics,
         model_parameters=best,
         validation_metrics=metrics,
         data_quality={

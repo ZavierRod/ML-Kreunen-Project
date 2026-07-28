@@ -325,6 +325,32 @@ def build_forecast_context(
             ],
             "warnings": list(reliability.warnings),
         }
+    diagnostics = getattr(result, "validation_diagnostics", None)
+    if diagnostics is not None:
+        context["validation_diagnostics"] = {
+            "calibration_bins": [
+                {
+                    "bin": item.bin_number,
+                    "rows": item.rows,
+                    "mean_predicted_probability": item.mean_predicted_probability,
+                    "observed_positive_rate": item.observed_positive_rate,
+                }
+                for item in diagnostics.calibration_bins
+            ],
+            "yearly_metrics": [
+                {
+                    "outcome_year": item.outcome_year,
+                    "rows": item.rows,
+                    "mae": item.mae,
+                    "rmse": item.rmse,
+                    "directional_hit_rate": item.directional_hit_rate,
+                    "interval_coverage": item.interval_coverage,
+                    "mean_actual_excess_return": item.mean_actual_excess_return,
+                    "mean_predicted_excess_return": item.mean_predicted_excess_return,
+                }
+                for item in diagnostics.yearly_metrics
+            ],
+        }
     return context
 
 

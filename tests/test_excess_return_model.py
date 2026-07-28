@@ -13,6 +13,7 @@ from excess_return_engine.model import (
     generate_forecast,
 )
 from excess_return_engine.reliability import RELIABILITY_VERSION
+from excess_return_engine.validation import VALIDATION_VERSION
 
 
 def synthetic_panels() -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -154,6 +155,9 @@ class ForecastTests(unittest.TestCase):
         self.assertGreaterEqual(result.reliability.model_reliability_score, 0)
         self.assertLessEqual(result.reliability.model_reliability_score, 100)
         self.assertEqual(result.reliability_version, RELIABILITY_VERSION)
+        self.assertEqual(result.validation_version, VALIDATION_VERSION)
+        self.assertEqual(len(result.validation_diagnostics.calibration_bins), 10)
+        self.assertGreaterEqual(len(result.validation_diagnostics.yearly_metrics), 1)
 
     def test_forecast_requires_enough_history(self) -> None:
         training, inference = synthetic_panels()

@@ -106,6 +106,12 @@ probabilities and intervals use a later calibration window, and interval coverag
 measured on the final half of that window. The final selected model is then fit on
 all historical rows before forecasting the requested security.
 
+The default 48-month calibration window uses its first 24 months to estimate the
+residual distribution and leaves its final 24 months untouched for validation. The
+forecast record includes ten equal-count probability-calibration bins and
+outcome-year MAE, RMSE, direction, interval coverage, and actual-versus-predicted
+excess-return summaries.
+
 ## Reliability assessment
 
 `excess_return_engine/reliability.py` calculates a versioned model-reliability score

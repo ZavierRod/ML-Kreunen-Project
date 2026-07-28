@@ -37,9 +37,9 @@ Implementation status:
   reconcilable linear contributions, versioned configuration IDs, and local
   forecast-run storage.
 - A December 2025 GOOGL research run using eight selected factors completed against
-  all 740,106 training rows in approximately two seconds. Its final 12-month
-  holdout produced 78.7% interval coverage for the requested 80% interval and
-  0.23% out-of-sample R-squared versus zero, reinforcing that outputs must display
+  all 740,106 training rows in approximately three seconds. Its final 24-month
+  holdout produced 80.5% interval coverage for the requested 80% interval and
+  0.06% out-of-sample R-squared versus zero, reinforcing that outputs must display
   measured uncertainty and modest predictive strength.
 - A separate local Streamlit research workflow is implemented in
   `ui/excess_return_engine/app.py`. It provides company selection by permanent
@@ -75,9 +75,14 @@ Implementation status:
   point-in-time status.
 - Forecast records and the UI expose every score component, multivariate
   training-distance percentile, nearest similarity, correlated selected-factor
-  pairs, and downgrade warnings. The real eight-factor GOOGL run scores `66.5/100`
+  pairs, and downgrade warnings. The real eight-factor GOOGL run scores `62.9/100`
   model reliability and `79/100` data quality; the latter is capped because
   fundamentals still use the research-lag proxy.
+- Versioned holdout diagnostics are implemented in
+  `excess_return_engine/validation.py`. The default 48-month calibration window
+  reserves its final 24 months for untouched evaluation, producing ten equal-count
+  probability-calibration bins and outcome-year validation tables for 2024 and
+  2025. UI-generated runs are now saved automatically to ignored local storage.
 - Delisting-return and actual fundamental-availability-date audits remain open.
 
 ## 1. Feature Summary

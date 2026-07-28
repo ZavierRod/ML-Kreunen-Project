@@ -20,10 +20,15 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from excess_return_engine.features import FACTOR_IDS, FACTOR_REGISTRY
-from excess_return_engine.model import ForecastRequest, generate_forecast
+from excess_return_engine.model import (
+    ForecastRequest,
+    generate_forecast,
+    save_forecast_result,
+)
 from ui.excess_return_engine import analyst
 from ui.excess_return_engine.presentation import (
     FACTOR_PRESETS,
+    calibration_table,
     company_options,
     configuration_quality,
     correlation_warning_table,
@@ -34,6 +39,7 @@ from ui.excess_return_engine.presentation import (
     reliability_component_table,
     regime_summary,
     regime_table,
+    yearly_validation_table,
 )
 
 DEFAULT_ARTIFACT_DIR = ROOT / "local_artifacts" / "excess_return_engine"
@@ -106,6 +112,43 @@ def contribution_chart(table: pd.DataFrame) -> go.Figure:
         xaxis_title="Contribution to expected excess return (%)",
         yaxis_title=None,
         showlegend=False,
+    )
+    return figure
+
+
+def calibration_chart(table: pd.DataFrame) -> go.Figure:
+    figure = go.Figure()
+    figure.add_trace(
+        go.Scatter(
+            x=table["Mean predicted probability"] * 100,
+            y=table["Observed positive rate"] * 100,
+            mode="lines+markers",
+            name="Holdout bins",
+            line=dict(color="#dc2626", width=2),
+            marker=dict(size=8),
+            hovertemplate=(
+                "Predicted: %{x:.1f}%<br>Observed: %{y:.1f}%<extra></extra>"
+            ),
+        )
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=[0, 100],
+            y=[0, 100],
+            mode="lines",
+            name="Perfect calibration",
+            line=dict(color="#6b7280", dash="dash"),
+            hoverinfo="skip",
+        )
+    )
+    figure.update_layout(
+        height=360,
+        margin=dict(l=20, r=20, t=20, b=40),
+        xaxis_title="Mean predicted positive probability (%)",
+        yaxis_title="Observed positive excess-return rate (%)",
+        xaxis=dict(range=[0, 100]),
+        yaxis=dict(range=[0, 100]),
+        legend=dict(orientation="h", y=1.08),
     )
     return figure
 
@@ -368,11 +411,16 @@ if run_forecast:
     )
     with st.spinner("Fitting selected-factor model and calibrating uncertainty..."):
         try:
-            st.session_state["excess_return_result"] = generate_forecast(
+            generated_result = generate_forecast(
                 training_panel,
                 inference_panel,
                 request,
             )
+            save_forecast_result(
+                generated_result,
+                ARTIFACT_DIR / "forecast_runs",
+            )
+            st.session_state["excess_return_result"] = generated_result
             st.session_state.pop("excess_return_error", None)
         except Exception as exc:
             st.session_state["excess_return_error"] = str(exc)
@@ -595,6 +643,50 @@ with validation_tab:
         "Predictive strength: "
         f"{predictive_strength_label(result.validation_metrics)}"
     )
+    calibration = calibration_table(result)
+    calibration_left, calibration_right = st.columns([1.2, 0.8])
+    with calibration_left:
+        st.plotly_chart(
+            calibration_chart(calibration),
+            width="stretch",
+            config={"displayModeBar": False},
+        )
+    with calibration_right:
+        calibration_display = calibration[
+            [
+                "Bin",
+                "Rows",
+                "Mean predicted probability",
+                "Observed positive rate",
+            ]
+        ]
+        st.dataframe(
+            calibration_display.style.format(
+                {
+                    "Mean predicted probability": "{:.1%}",
+                    "Observed positive rate": "{:.1%}",
+                }
+            ),
+            hide_index=True,
+            width="stretch",
+            height=360,
+        )
+    st.markdown("**Validation by outcome year**")
+    yearly_validation = yearly_validation_table(result)
+    st.dataframe(
+        yearly_validation.style.format(
+            {
+                "MAE": "{:.2%}",
+                "RMSE": "{:.2%}",
+                "Directional hit rate": "{:.1%}",
+                "Interval coverage": "{:.1%}",
+                "Mean actual excess return": "{:+.2%}",
+                "Mean predicted excess return": "{:+.2%}",
+            }
+        ),
+        hide_index=True,
+        width="stretch",
+    )
 with data_tab:
     quality_rows = [
         {"Component": key.replace("_", " ").title(), "Value": str(value)}
@@ -604,7 +696,8 @@ with data_tab:
     st.caption(
         f"Data: {result.data_version} · Target: {result.target_version} · "
         f"Features: {result.feature_version} · Model: {result.model_version} · "
-        f"Reliability: {result.reliability_version}"
+        f"Reliability: {result.reliability_version} · "
+        f"Validation: {result.validation_version}"
     )
 
 render_forecast_analyst(result)

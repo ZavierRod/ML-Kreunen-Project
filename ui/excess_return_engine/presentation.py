@@ -224,6 +224,40 @@ def correlation_warning_table(result: ForecastResult) -> pd.DataFrame:
     )
 
 
+def calibration_table(result: ForecastResult) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "Bin": item.bin_number,
+                "Rows": item.rows,
+                "Minimum probability": item.minimum_probability,
+                "Maximum probability": item.maximum_probability,
+                "Mean predicted probability": item.mean_predicted_probability,
+                "Observed positive rate": item.observed_positive_rate,
+            }
+            for item in result.validation_diagnostics.calibration_bins
+        ]
+    )
+
+
+def yearly_validation_table(result: ForecastResult) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "Outcome year": item.outcome_year,
+                "Rows": item.rows,
+                "MAE": item.mae,
+                "RMSE": item.rmse,
+                "Directional hit rate": item.directional_hit_rate,
+                "Interval coverage": item.interval_coverage,
+                "Mean actual excess return": item.mean_actual_excess_return,
+                "Mean predicted excess return": item.mean_predicted_excess_return,
+            }
+            for item in result.validation_diagnostics.yearly_metrics
+        ]
+    )
+
+
 def predictive_strength_label(metrics: dict[str, float | int]) -> str:
     r2 = float(metrics["oos_r2_vs_zero"])
     directional = float(metrics["directional_hit_rate"])

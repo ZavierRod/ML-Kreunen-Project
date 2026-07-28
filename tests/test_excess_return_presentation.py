@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pandas as pd
 
 from ui.excess_return_engine.presentation import (
+    calibration_table,
     company_options,
     configuration_quality,
     correlation_warning_table,
@@ -13,6 +14,7 @@ from ui.excess_return_engine.presentation import (
     reliability_component_table,
     regime_summary,
     regime_table,
+    yearly_validation_table,
 )
 
 
@@ -163,6 +165,40 @@ class PresentationTests(unittest.TestCase):
         self.assertEqual(
             correlation_warning_table(result).iloc[0]["Factor A"],
             "Size",
+        )
+
+    def test_validation_diagnostic_tables_are_readable(self) -> None:
+        result = SimpleNamespace(
+            validation_diagnostics=SimpleNamespace(
+                calibration_bins=(
+                    SimpleNamespace(
+                        bin_number=1,
+                        rows=10,
+                        minimum_probability=0.1,
+                        maximum_probability=0.2,
+                        mean_predicted_probability=0.15,
+                        observed_positive_rate=0.2,
+                    ),
+                ),
+                yearly_metrics=(
+                    SimpleNamespace(
+                        outcome_year=2025,
+                        rows=10,
+                        mae=0.04,
+                        rmse=0.06,
+                        directional_hit_rate=0.52,
+                        interval_coverage=0.8,
+                        mean_actual_excess_return=0.01,
+                        mean_predicted_excess_return=0.005,
+                    ),
+                ),
+            )
+        )
+
+        self.assertEqual(calibration_table(result).iloc[0]["Rows"], 10)
+        self.assertEqual(
+            yearly_validation_table(result).iloc[0]["Outcome year"],
+            2025,
         )
 
 
