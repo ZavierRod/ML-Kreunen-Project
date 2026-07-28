@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+from excess_return_engine.replay import ReplayOutcome
 from ui.excess_return_engine import analyst
 
 
@@ -224,6 +225,23 @@ class ForecastAnalystTests(unittest.TestCase):
             context["historical_evidence"]["analogs"][0]["ticker"],
             "BBB",
         )
+
+    def test_context_includes_post_forecast_replay_outcome(self) -> None:
+        context = analyst.build_forecast_context(
+            forecast_result(),
+            replay_outcome=ReplayOutcome(
+                permno=1,
+                as_of_date="2025-12-31",
+                target_month="2026-01-31",
+                realized_excess_return=0.03,
+                realized_stock_return=0.04,
+                realized_benchmark_return=0.01,
+            ),
+        )
+
+        replay = context["replay_evaluation"]
+        self.assertTrue(replay["outcome_joined_after_forecast"])
+        self.assertAlmostEqual(replay["forecast_error"], -0.018)
 
     def test_api_call_is_non_stored_and_run_id_is_immutable(self) -> None:
         fake_responses = _FakeResponses()

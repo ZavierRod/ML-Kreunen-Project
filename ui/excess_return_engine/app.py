@@ -31,9 +31,15 @@ from excess_return_engine.model import (
     generate_forecast,
     save_forecast_result,
 )
+from excess_return_engine.replay import (
+    available_as_of_dates,
+    build_as_of_snapshot,
+    realized_replay_outcome,
+)
 from ui.excess_return_engine import analyst
 from ui.excess_return_engine.presentation import (
     FACTOR_PRESETS,
+    apply_pending_saved_configuration,
     calibration_table,
     challenger_diagnostics_table,
     company_options,
@@ -45,6 +51,7 @@ from ui.excess_return_engine.presentation import (
     experiment_contribution_table,
     historical_analog_table,
     predictive_strength_label,
+    queue_saved_configuration,
     reliability_component_table,
     regime_summary,
     regime_table,
@@ -358,7 +365,10 @@ def render_forecast_analyst_answer(answer: dict[str, object]) -> None:
                 st.rerun()
 
 
-def render_forecast_analyst(result) -> None:
+def render_forecast_analyst(
+    result,
+    replay_outcome=None,
+) -> None:
     st.divider()
     st.subheader("Ask the Forecast")
 
@@ -435,6 +445,7 @@ def render_forecast_analyst(result) -> None:
         context = analyst.build_forecast_context(
             result,
             include_analog_rows=include_analog_rows,
+            replay_outcome=replay_outcome,
         )
         with st.spinner("Analyzing this forecast run..."):
             try:
@@ -474,16 +485,45 @@ except Exception as exc:
     st.caption(f"Expected local artifact directory: {ARTIFACT_DIR}")
     st.stop()
 
-as_of = pd.Timestamp(inference_panel["month_end"].max())
-target_month = pd.Timestamp(inference_panel["target_month"].max())
-benchmark_ids = inference_panel["benchmark_id"].dropna().astype(str).unique()
+latest_as_of = pd.Timestamp(inference_panel["month_end"].max())
+as_of_dates = available_as_of_dates(training_panel, inference_panel)
+as_of_lookup = {
+    item.date().isoformat(): item
+    for item in reversed(as_of_dates)
+}
+latest_as_of_key = latest_as_of.date().isoformat()
+apply_pending_saved_configuration(st.session_state)
+st.session_state.setdefault("forecast_as_of", latest_as_of_key)
+if st.session_state["forecast_as_of"] not in as_of_lookup:
+    st.session_state["forecast_as_of"] = latest_as_of_key
+
+with st.sidebar:
+    st.header("Forecast Configuration")
+    selected_as_of_key = st.selectbox(
+        "As-of date",
+        options=list(as_of_lookup),
+        key="forecast_as_of",
+        format_func=lambda value: (
+            f"Latest · {value}"
+            if value == latest_as_of_key
+            else value
+        ),
+    )
+
+as_of = as_of_lookup[selected_as_of_key]
+inference_snapshot = build_as_of_snapshot(
+    training_panel,
+    inference_panel,
+    as_of,
+)
+target_month = pd.Timestamp(inference_snapshot["target_month"].max())
+benchmark_ids = (
+    inference_snapshot["benchmark_id"].dropna().astype(str).unique()
+)
 benchmark_id = benchmark_ids[0] if len(benchmark_ids) == 1 else "Multiple benchmarks"
 
-options = company_options(inference_panel)
+options = company_options(inference_snapshot)
 option_lookup = dict(options)
-company_label_by_permno = {
-    company_permno: label for label, company_permno in options
-}
 default_company = next(
     (label for label, _ in options if label.startswith("GOOGL ·")),
     options[0][0],
@@ -502,7 +542,6 @@ training_window_options = tuple(
 )
 
 with st.sidebar:
-    st.header("Forecast Configuration")
     if saved_experiments:
         saved_lookup = {
             item.experiment_id: item for item in saved_experiments
@@ -521,49 +560,59 @@ with st.sidebar:
             width="stretch",
         ):
             saved = saved_lookup[saved_choice]
-            saved_company = company_label_by_permno.get(saved.permno)
-            if saved_company is None:
-                st.error("The saved security is not in the current inference panel.")
-            elif saved.as_of_date != as_of.date().isoformat():
+            if saved.as_of_date not in as_of_lookup:
                 st.error(
-                    "The saved as-of date is not available in the current "
-                    "inference snapshot."
-                )
-            elif (
-                saved.training_window_months is not None
-                and saved.training_window_months not in training_window_options
-            ):
-                st.error(
-                    "The saved training window is not available in the "
-                    "current research panel."
+                    "The saved as-of date is not available in the loaded "
+                    "research panels."
                 )
             else:
-                st.session_state["forecast_company"] = saved_company
-                st.session_state["forecast_factors"] = list(saved.selected_factors)
-                st.session_state["forecast_interval"] = saved.interval_level
-                st.session_state["forecast_training_window"] = (
-                    ALL_HISTORY_OPTION
-                    if saved.training_window_months is None
-                    else saved.training_window_months
+                saved_as_of = as_of_lookup[saved.as_of_date]
+                saved_snapshot = build_as_of_snapshot(
+                    training_panel,
+                    inference_panel,
+                    saved_as_of,
                 )
-                matching_preset = next(
+                saved_options = company_options(saved_snapshot)
+                saved_company = next(
                     (
-                        name
-                        for name, factors in FACTOR_PRESETS.items()
-                        if tuple(factors) == tuple(saved.selected_factors)
+                        label
+                        for label, saved_permno in saved_options
+                        if saved_permno == saved.permno
                     ),
                     None,
                 )
-                st.session_state["forecast_preset"] = matching_preset
-                st.session_state["_last_forecast_preset"] = matching_preset
-                st.session_state.pop("excess_return_result", None)
-                st.session_state["applied_experiment_message"] = (
-                    f"Applied {saved.name} · run {saved.configuration_id}."
+                saved_available_months = int(
+                    training_panel.loc[
+                        pd.to_datetime(training_panel["month_end"])
+                        < saved_as_of,
+                        "month_end",
+                    ].nunique()
                 )
-                st.rerun()
+                if saved_company is None:
+                    st.error(
+                        "The saved security is not available at its saved "
+                        "as-of date."
+                    )
+                elif (
+                    saved.training_window_months is not None
+                    and saved.training_window_months > saved_available_months
+                ):
+                    st.error(
+                        "The saved training window is not available at its "
+                        "saved as-of date."
+                    )
+                else:
+                    queue_saved_configuration(
+                        st.session_state,
+                        saved,
+                        saved_company,
+                    )
+                    st.rerun()
         st.divider()
 
     st.session_state.setdefault("forecast_company", default_company)
+    if st.session_state["forecast_company"] not in option_lookup:
+        st.session_state["forecast_company"] = default_company
     selected_company = st.selectbox(
         "Company",
         options=[label for label, _ in options],
@@ -603,6 +652,11 @@ with st.sidebar:
         "forecast_training_window",
         ALL_HISTORY_OPTION,
     )
+    if (
+        st.session_state["forecast_training_window"]
+        not in training_window_options
+    ):
+        st.session_state["forecast_training_window"] = ALL_HISTORY_OPTION
     selected_training_window = st.selectbox(
         "Training window",
         options=training_window_options,
@@ -626,10 +680,11 @@ if applied_message:
 
 quality = configuration_quality(
     training_panel,
-    inference_panel,
+    inference_snapshot,
     permno,
     tuple(selected_factors),
     training_window_months=training_window_months,
+    as_of_date=as_of,
 )
 
 config_columns = st.columns(4)
@@ -665,6 +720,7 @@ if run_forecast:
     request = ForecastRequest(
         permno=permno,
         selected_factors=tuple(selected_factors),
+        as_of_date=as_of.date().isoformat(),
         interval_level=interval_level,
         training_window_months=training_window_months,
     )
@@ -672,7 +728,7 @@ if run_forecast:
         try:
             generated_result = generate_forecast(
                 training_panel,
-                inference_panel,
+                inference_snapshot,
                 request,
             )
             save_forecast_result(
@@ -692,6 +748,9 @@ result_matches_configuration = (
     result is not None
     and result.permno == permno
     and result.selected_factors == tuple(selected_factors)
+    and result.as_of_date == as_of.date().isoformat()
+    and result.snapshot_source
+    == inference_snapshot.attrs["snapshot_source"]
     and result.interval_level == interval_level
     and getattr(result, "training_window_months", None) == training_window_months
 )
@@ -739,8 +798,44 @@ st.caption(
     f"Benchmark: {result.benchmark_id} · As of: {result.as_of_date} · "
     f"Target: {result.target_month} · Training: "
     f"{format_training_window(getattr(result, 'training_window_months', None))} · "
+    f"Mode: "
+    f"{'Historical replay' if result.snapshot_source == 'historical_replay' else 'Latest snapshot'} "
+    f"· "
     f"Run: {result.configuration_id}"
 )
+replay_outcome = None
+if result.snapshot_source == "historical_replay":
+    replay_outcome = realized_replay_outcome(
+        training_panel,
+        result.permno,
+        result.as_of_date,
+    )
+    if replay_outcome is not None:
+        st.markdown("**Replay outcome · revealed after forecast generation**")
+        replay_columns = st.columns(4)
+        replay_columns[0].metric(
+            "Realized excess return",
+            format_percent(replay_outcome.realized_excess_return),
+        )
+        replay_columns[1].metric(
+            "Forecast error",
+            format_percent(
+                result.expected_excess_return
+                - replay_outcome.realized_excess_return
+            ),
+        )
+        replay_columns[2].metric(
+            "Realized stock return",
+            format_percent(replay_outcome.realized_stock_return),
+        )
+        replay_columns[3].metric(
+            "Realized benchmark return",
+            format_percent(replay_outcome.realized_benchmark_return),
+        )
+        st.caption(
+            "The realized outcome was excluded from the inference snapshot "
+            "and model fit, then joined back only for replay evaluation."
+        )
 
 contributions = contribution_table(result)
 contribution_tab, evidence_tab, reliability_tab, validation_tab, data_tab = st.tabs(
@@ -1001,11 +1096,12 @@ with data_tab:
         f"Features: {result.feature_version} · Model: {result.model_version} · "
         f"Reliability: {result.reliability_version} · "
         f"Validation: {result.validation_version} · "
-        f"Challengers: {result.challenger_version}"
+        f"Challengers: {result.challenger_version} · "
+        f"Replay: {result.replay_version or 'not applicable'}"
     )
 
 render_experiment_workspace(result)
-render_forecast_analyst(result)
+render_forecast_analyst(result, replay_outcome=replay_outcome)
 
 st.download_button(
     "Download forecast JSON",

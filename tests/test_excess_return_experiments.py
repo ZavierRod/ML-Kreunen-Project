@@ -26,6 +26,8 @@ def forecast_result(
         ticker="AAA",
         company="Alpha",
         as_of_date="2025-12-31",
+        snapshot_source="latest_inference",
+        replay_version=None,
         target_month="2026-01-31",
         benchmark_id="benchmark",
         selected_factors=factors,
@@ -148,6 +150,8 @@ class ExperimentTests(unittest.TestCase):
             payload = experiment.to_dict()
             payload["experiment_version"] = "saved-experiment-v1"
             payload.pop("training_window_months")
+            payload.pop("snapshot_source")
+            payload.pop("replay_version")
             payload.pop("challenger_version")
             payload.pop("challenger_leader_model_id")
             payload.pop("production_rmse")
@@ -158,6 +162,10 @@ class ExperimentTests(unittest.TestCase):
 
             self.assertEqual(len(listed), 1)
             self.assertIsNone(listed[0].training_window_months)
+            self.assertEqual(
+                listed[0].snapshot_source,
+                "latest_inference",
+            )
             self.assertIsNone(listed[0].challenger_version)
             self.assertIsNone(listed[0].production_rmse)
 

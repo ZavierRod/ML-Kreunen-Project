@@ -35,13 +35,14 @@ from .reliability import (
     ReliabilityAssessment,
     assess_reliability,
 )
+from .replay import REPLAY_VERSION
 from .validation import (
     VALIDATION_VERSION,
     ValidationDiagnostics,
     build_validation_diagnostics,
 )
 
-MODEL_VERSION = "elastic-net-panel-v3"
+MODEL_VERSION = "elastic-net-panel-v4"
 TARGET_VERSION = "calendar-excess-return-v1"
 TARGET_COLUMN = "excess_return_next_month"
 MONTH_COLUMN = "month_end"
@@ -106,6 +107,7 @@ class ForecastResult:
     configuration_id: str
     model_version: str
     challenger_version: str
+    replay_version: str | None
     reliability_version: str
     validation_version: str
     feature_version: str
@@ -115,6 +117,7 @@ class ForecastResult:
     ticker: str | None
     company: str | None
     as_of_date: str
+    snapshot_source: str
     target_month: str
     benchmark_id: str
     selected_factors: tuple[str, ...]
@@ -357,6 +360,7 @@ def _configuration_id(
     as_of: pd.Timestamp,
     benchmark_id: str,
     data_version: str,
+    snapshot_source: str,
 ) -> str:
     payload = {
         "permno": request.permno,
@@ -364,6 +368,12 @@ def _configuration_id(
         "as_of_date": as_of.date().isoformat(),
         "benchmark_id": benchmark_id,
         "data_version": data_version,
+        "snapshot_source": snapshot_source,
+        "replay_version": (
+            REPLAY_VERSION
+            if snapshot_source == "historical_replay"
+            else None
+        ),
         "interval_level": request.interval_level,
         "training_window_months": request.training_window_months,
         "tuning_months": request.tuning_months,
@@ -397,6 +407,11 @@ def generate_forecast(
 
     training = training_panel.copy()
     inference = inference_panel.copy()
+    snapshot_source = str(
+        inference_panel.attrs.get("snapshot_source", "latest_inference")
+    )
+    if snapshot_source not in {"latest_inference", "historical_replay"}:
+        raise ValueError(f"Unsupported snapshot source: {snapshot_source}.")
     training[MONTH_COLUMN] = pd.to_datetime(training[MONTH_COLUMN])
     inference[MONTH_COLUMN] = pd.to_datetime(inference[MONTH_COLUMN])
     inference["target_month"] = pd.to_datetime(inference["target_month"])
@@ -642,9 +657,15 @@ def generate_forecast(
             as_of,
             current_benchmark,
             data_version,
+            snapshot_source,
         ),
         model_version=MODEL_VERSION,
         challenger_version=CHALLENGER_VERSION,
+        replay_version=(
+            REPLAY_VERSION
+            if snapshot_source == "historical_replay"
+            else None
+        ),
         reliability_version=RELIABILITY_VERSION,
         validation_version=VALIDATION_VERSION,
         feature_version=FEATURE_VERSION,
@@ -654,6 +675,7 @@ def generate_forecast(
         ticker=_optional_string(current.get("ticker")),
         company=_optional_string(current.get("company")),
         as_of_date=as_of.date().isoformat(),
+        snapshot_source=snapshot_source,
         target_month=pd.Timestamp(current["target_month"]).date().isoformat(),
         benchmark_id=current_benchmark,
         selected_factors=selected,

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import MutableMapping
+from typing import Any
+
 import pandas as pd
 
 from excess_return_engine.experiments import (
@@ -46,6 +49,50 @@ FACTOR_PRESETS = {
     ),
 }
 
+PENDING_CONFIGURATION_KEY = "_pending_saved_forecast_configuration"
+
+
+def queue_saved_configuration(
+    state: MutableMapping[str, Any],
+    saved: SavedExperiment,
+    company_label: str,
+) -> None:
+    matching_preset = next(
+        (
+            name
+            for name, factors in FACTOR_PRESETS.items()
+            if tuple(factors) == tuple(saved.selected_factors)
+        ),
+        None,
+    )
+    state[PENDING_CONFIGURATION_KEY] = {
+        "forecast_as_of": saved.as_of_date,
+        "forecast_company": company_label,
+        "forecast_factors": list(saved.selected_factors),
+        "forecast_interval": saved.interval_level,
+        "forecast_training_window": (
+            "all_available"
+            if saved.training_window_months is None
+            else saved.training_window_months
+        ),
+        "forecast_preset": matching_preset,
+        "_last_forecast_preset": matching_preset,
+        "applied_experiment_message": (
+            f"Applied {saved.name} · run {saved.configuration_id}."
+        ),
+    }
+
+
+def apply_pending_saved_configuration(
+    state: MutableMapping[str, Any],
+) -> bool:
+    pending = state.pop(PENDING_CONFIGURATION_KEY, None)
+    if pending is None:
+        return False
+    state.update(pending)
+    state.pop("excess_return_result", None)
+    return True
+
 
 def company_options(inference: pd.DataFrame) -> list[tuple[str, int]]:
     required = {"permno", "ticker", "company"}
@@ -77,6 +124,7 @@ def configuration_quality(
     selected_factors: tuple[str, ...],
     training_window_months: int | None = None,
     minimum_required_months: int = 120,
+    as_of_date: str | pd.Timestamp | None = None,
 ) -> dict[str, object]:
     if not selected_factors:
         return {
@@ -101,6 +149,11 @@ def configuration_quality(
         }
 
     relevant = training.dropna(subset=["excess_return_next_month"]).copy()
+    if as_of_date is not None:
+        as_of = pd.Timestamp(as_of_date).to_period("M").to_timestamp("M")
+        relevant = relevant[
+            pd.to_datetime(relevant["month_end"]) < as_of
+        ]
     available_months = sorted(pd.to_datetime(relevant["month_end"]).unique())
     if (
         training_window_months is not None

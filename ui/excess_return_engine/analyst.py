@@ -11,6 +11,7 @@ from typing import Any
 
 from excess_return_engine.features import FACTOR_REGISTRY
 from excess_return_engine.model import ForecastResult
+from excess_return_engine.replay import ReplayOutcome
 
 DEFAULT_MODEL = "gpt-4o-mini"
 MAX_QUESTION_LENGTH = 2_000
@@ -158,6 +159,7 @@ def build_forecast_context(
     result: ForecastResult,
     *,
     include_analog_rows: bool = False,
+    replay_outcome: ReplayOutcome | None = None,
 ) -> dict[str, object]:
     """Build compact evidence without exposing the underlying research panels."""
     regimes = {item.factor_id: item for item in result.current_regime}
@@ -236,6 +238,12 @@ def build_forecast_context(
             "company": result.company,
             "permno": result.permno,
             "as_of_date": result.as_of_date,
+            "snapshot_source": getattr(
+                result,
+                "snapshot_source",
+                "latest_inference",
+            ),
+            "replay_version": getattr(result, "replay_version", None),
             "target_month": result.target_month,
             "benchmark_id": result.benchmark_id,
             "selected_factors": list(result.selected_factors),
@@ -377,6 +385,24 @@ def build_forecast_context(
                 }
                 for item in diagnostics.yearly_metrics
             ],
+        }
+    if replay_outcome is not None:
+        realized_excess_return = float(
+            getattr(replay_outcome, "realized_excess_return")
+        )
+        context["replay_evaluation"] = {
+            "outcome_joined_after_forecast": True,
+            "target_month": getattr(replay_outcome, "target_month"),
+            "realized_excess_return": realized_excess_return,
+            "forecast_error": (
+                result.expected_excess_return - realized_excess_return
+            ),
+            "realized_stock_return": float(
+                getattr(replay_outcome, "realized_stock_return")
+            ),
+            "realized_benchmark_return": float(
+                getattr(replay_outcome, "realized_benchmark_return")
+            ),
         }
     return context
 

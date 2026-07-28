@@ -183,6 +183,7 @@ class ForecastTests(unittest.TestCase):
 
     def test_forecast_uses_requested_trailing_training_window(self) -> None:
         training, inference = synthetic_panels()
+        inference.attrs["snapshot_source"] = "historical_replay"
         request = ForecastRequest(
             permno=3,
             selected_factors=("size",),
@@ -197,6 +198,8 @@ class ForecastTests(unittest.TestCase):
         result = generate_forecast(training, inference, request)
 
         self.assertEqual(result.training_window_months, 72)
+        self.assertEqual(result.snapshot_source, "historical_replay")
+        self.assertEqual(result.replay_version, "historical-replay-v1")
         self.assertEqual(result.data_quality["training_months"], 72)
         self.assertIn("months-2016-12-31-to-2022-11-30", result.data_version)
 

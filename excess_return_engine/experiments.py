@@ -10,10 +10,11 @@ from pathlib import Path
 
 from .model import ForecastResult
 
-EXPERIMENT_VERSION = "saved-experiment-v3"
+EXPERIMENT_VERSION = "saved-experiment-v4"
 SUPPORTED_EXPERIMENT_VERSIONS = {
     "saved-experiment-v1",
     "saved-experiment-v2",
+    "saved-experiment-v3",
     EXPERIMENT_VERSION,
 }
 MAX_EXPERIMENT_NAME_LENGTH = 80
@@ -36,6 +37,8 @@ class SavedExperiment:
     ticker: str | None
     company: str | None
     as_of_date: str
+    snapshot_source: str
+    replay_version: str | None
     target_month: str
     benchmark_id: str
     selected_factors: tuple[str, ...]
@@ -99,6 +102,8 @@ def save_experiment(
         ticker=result.ticker,
         company=result.company,
         as_of_date=result.as_of_date,
+        snapshot_source=result.snapshot_source,
+        replay_version=result.replay_version,
         target_month=result.target_month,
         benchmark_id=result.benchmark_id,
         selected_factors=tuple(result.selected_factors),
@@ -203,6 +208,11 @@ def comparison_records(
             "Ticker": item.ticker or "N/A",
             "Factors": len(item.selected_factors),
             "Factor set": ", ".join(item.selected_factors),
+            "As-of mode": (
+                "Historical replay"
+                if item.snapshot_source == "historical_replay"
+                else "Latest snapshot"
+            ),
             "Training window": (
                 "All available"
                 if item.training_window_months is None
@@ -290,6 +300,10 @@ def _experiment_from_dict(payload: dict[str, object]) -> SavedExperiment:
         ticker=_optional_string(payload.get("ticker")),
         company=_optional_string(payload.get("company")),
         as_of_date=str(payload["as_of_date"]),
+        snapshot_source=str(
+            payload.get("snapshot_source", "latest_inference")
+        ),
+        replay_version=_optional_string(payload.get("replay_version")),
         target_month=str(payload["target_month"]),
         benchmark_id=str(payload["benchmark_id"]),
         selected_factors=tuple(str(item) for item in payload["selected_factors"]),

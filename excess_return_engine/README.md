@@ -190,9 +190,10 @@ python -m streamlit run ui/excess_return_engine/app.py
 
 Set `EXCESS_RETURN_ARTIFACT_DIR` to use a different local panel directory. The UI
 supports permanent-security company selection, factor presets and custom factor
-sets, configurable prediction intervals, pre-run data-quality gates, contribution
-attribution, current factor regimes, historical analog outcomes, validation
-metrics, version metadata, saved experiment comparison, and JSON export.
+sets, current and historical as-of selection, configurable prediction intervals,
+pre-run data-quality gates, contribution attribution, current factor regimes,
+historical analog outcomes, validation metrics, version metadata, saved experiment
+comparison, and JSON export.
 
 This research UI is intentionally separate from the public Streamlit deployment.
 The licensed WRDS-derived panels remain local and must not be committed to Git or
@@ -222,10 +223,32 @@ benchmark, or data version so comparisons are not presented as equivalent when
 their underlying contracts differ.
 
 Applying a saved configuration restores its company, factor set, and prediction
-interval, including the training window. Version 1 experiment manifests load as
-all-available-history configurations; new saves use version 2. The current research
-UI can restore only an as-of date present in the loaded inference snapshot; older
-snapshots must first be loaded through `EXCESS_RETURN_ARTIFACT_DIR`.
+interval, including the training window and as-of date. Version 1 manifests load as
+all-available-history configurations, and versions 1 through 3 migrate to
+latest-snapshot mode; new saves use version 4. A configuration can be restored when
+its as-of cross-section exists in the loaded research panels.
+
+## Historical as-of replay
+
+The as-of selector includes every historical month with enough prior history for
+the default fit, tuning, and calibration design. For a historical selection,
+`excess_return_engine/replay.py` creates an inference-only cross-section from that
+month's factor rows and blanks:
+
+- Realized stock return
+- Realized benchmark return
+- Realized excess return
+- Future benchmark constituent count and aggregate market capitalization
+
+The model then filters its training panel to months strictly before the selected
+as-of date. Only after the forecast is generated does the UI retrieve the held-back
+realized outcome through a separate function. It displays the realized excess
+return, forecast error, stock return, and benchmark return as replay evaluation
+evidence. The LLM context marks this outcome as joined after forecasting.
+
+Replay mode and version are part of the configuration hash, forecast JSON, analyst
+context, and version-4 saved experiment manifest. Older experiment versions migrate
+to latest-snapshot mode.
 
 ## Ask the Forecast
 

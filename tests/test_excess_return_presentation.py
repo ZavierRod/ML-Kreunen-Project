@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pandas as pd
 
 from ui.excess_return_engine.presentation import (
+    apply_pending_saved_configuration,
     calibration_table,
     challenger_diagnostics_table,
     company_options,
@@ -14,6 +15,7 @@ from ui.excess_return_engine.presentation import (
     experiment_contribution_table,
     historical_analog_table,
     predictive_strength_label,
+    queue_saved_configuration,
     reliability_component_table,
     regime_summary,
     regime_table,
@@ -22,6 +24,33 @@ from ui.excess_return_engine.presentation import (
 
 
 class PresentationTests(unittest.TestCase):
+    def test_saved_configuration_is_deferred_until_next_run(self) -> None:
+        state = {
+            "forecast_as_of": "2025-12-31",
+            "excess_return_result": object(),
+        }
+        saved = SimpleNamespace(
+            as_of_date="2024-12-31",
+            selected_factors=("size", "momentum_12_1"),
+            interval_level=0.9,
+            training_window_months=120,
+            name="Historical replay",
+            configuration_id="abc123",
+        )
+
+        queue_saved_configuration(state, saved, "GOOGL · Alphabet")
+
+        self.assertEqual(state["forecast_as_of"], "2025-12-31")
+        self.assertTrue(apply_pending_saved_configuration(state))
+        self.assertEqual(state["forecast_as_of"], "2024-12-31")
+        self.assertEqual(state["forecast_training_window"], 120)
+        self.assertEqual(
+            state["forecast_factors"],
+            ["size", "momentum_12_1"],
+        )
+        self.assertNotIn("excess_return_result", state)
+        self.assertFalse(apply_pending_saved_configuration(state))
+
     def test_company_options_use_permanent_identifier(self) -> None:
         inference = pd.DataFrame(
             [
@@ -92,6 +121,29 @@ class PresentationTests(unittest.TestCase):
         )
 
         self.assertEqual(len(quality["correlated_pairs"]), 1)
+
+    def test_configuration_quality_excludes_rows_on_or_after_as_of(self) -> None:
+        months = pd.date_range("2015-01-31", periods=130, freq="ME")
+        training = pd.DataFrame(
+            {
+                "month_end": months,
+                "size": 1.0,
+                "excess_return_next_month": 0.01,
+            }
+        )
+        inference = pd.DataFrame([{"permno": 1, "size": 1.0}])
+
+        quality = configuration_quality(
+            training,
+            inference,
+            1,
+            ("size",),
+            as_of_date=months[120],
+        )
+
+        self.assertEqual(quality["status"], "ready")
+        self.assertEqual(quality["training_months"], 120)
+        self.assertEqual(quality["training_rows"], 120)
 
     def test_factor_labels_and_predictive_strength_are_explicit(self) -> None:
         self.assertEqual(factor_option_label("size"), "Size · Market")
@@ -211,6 +263,7 @@ class PresentationTests(unittest.TestCase):
             ticker="AAA",
             permno=1,
             selected_factors=("size",),
+            snapshot_source="latest_inference",
             training_window_months=None,
             expected_excess_return=0.01,
             probability_positive=0.55,
@@ -243,6 +296,7 @@ class PresentationTests(unittest.TestCase):
             ticker="AAA",
             permno=1,
             selected_factors=("size",),
+            snapshot_source="latest_inference",
             expected_excess_return=0.01,
             probability_positive=0.55,
             interval_lower=-0.05,

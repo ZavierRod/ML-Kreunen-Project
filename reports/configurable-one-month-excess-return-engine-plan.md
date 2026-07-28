@@ -115,6 +115,17 @@ Implementation status:
   `DlyRet` without an explicit delisting-return field and derives
   `fund_available_date` as `datadate + 3 months`; no `rdq`, filing date, or revision
   timestamp is present.
+- Versioned historical as-of replay is implemented in
+  `excess_return_engine/replay.py`. Eligible dates require at least 120 earlier
+  months. Historical inference snapshots blank all realized stock, benchmark, and
+  excess-return fields plus future benchmark aggregates before model execution.
+- Replay quality checks and model fitting use only months strictly before the
+  selected as-of date. The realized outcome is joined back through a separate
+  post-forecast path and is labeled accordingly in the UI and LLM evidence.
+- A real December 2024 GOOGL replay built a 3,856-security inference cross-section
+  with every outcome field hidden. Run `5b39593247c92361` forecast `-0.61%` excess
+  return for January 2025 versus a subsequently revealed `+4.41%`, a forecast error
+  of `-5.03%`; this miss remains visible rather than being optimized away.
 - Delisting-return and actual fundamental-availability-date audits remain open.
 
 ## 1. Feature Summary
