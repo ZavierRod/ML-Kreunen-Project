@@ -35,7 +35,9 @@ def synthetic_panels() -> tuple[pd.DataFrame, pd.DataFrame]:
                     "ticker": f"T{permno}",
                     "company": f"Company {permno}",
                     "size": size,
+                    "market_cap": float(np.exp(size)),
                     "momentum_12_1": momentum,
+                    "source_last_trading_date": month,
                     "excess_return_next_month": target,
                 }
             )
@@ -51,7 +53,11 @@ def synthetic_panels() -> tuple[pd.DataFrame, pd.DataFrame]:
                 "ticker": f"T{permno}",
                 "company": f"Company {permno}",
                 "size": permno / 10 + len(months) / 500,
+                "market_cap": float(
+                    np.exp(permno / 10 + len(months) / 500)
+                ),
                 "momentum_12_1": np.sin(len(months) / 8 + permno) / 10,
+                "source_last_trading_date": inference_month,
             }
             for permno in range(1, 9)
         ]

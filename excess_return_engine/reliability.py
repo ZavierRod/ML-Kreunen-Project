@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-RELIABILITY_VERSION = "reliability-v1"
+RELIABILITY_VERSION = "reliability-v2"
 
 
 @dataclass(frozen=True)
@@ -55,6 +55,8 @@ def assess_reliability(
     training_months: int,
     point_in_time_status: str,
     analog_similarities: tuple[float, ...],
+    factor_freshness_score: float = 1.0,
+    factor_lineage_status: str = "Verified",
     correlation_threshold: float = 0.85,
 ) -> ReliabilityAssessment:
     """Score only observable reliability inputs and retain their warnings."""
@@ -111,14 +113,20 @@ def assess_reliability(
 
     history_score = float(np.clip((training_months - 60) / 60.0, 0.0, 1.0))
     point_in_time_score = 1.0 if point_in_time_status == "verified" else 0.5
+    freshness_score = float(np.clip(factor_freshness_score, 0.0, 1.0))
     data_score = 100.0 * (
-        0.40 * selected_factor_completeness
-        + 0.30 * historical_factor_coverage
-        + 0.20 * point_in_time_score
+        0.35 * selected_factor_completeness
+        + 0.25 * historical_factor_coverage
+        + 0.15 * point_in_time_score
         + 0.10 * history_score
+        + 0.15 * freshness_score
     )
     if point_in_time_status != "verified":
         data_score = min(data_score, 79.0)
+    if factor_lineage_status == "Stale":
+        data_score = min(data_score, 59.0)
+    elif factor_lineage_status == "Incomplete":
+        data_score = min(data_score, 39.0)
 
     correlations = _correlated_factor_pairs(
         historical,
@@ -156,6 +164,18 @@ def assess_reliability(
     if point_in_time_status != "verified":
         warnings.append(
             "Fundamental point-in-time availability uses the research-lag proxy."
+        )
+    if factor_lineage_status == "Aging":
+        warnings.append(
+            "At least one selected factor is based on aging source evidence."
+        )
+    elif factor_lineage_status == "Stale":
+        warnings.append(
+            "At least one selected factor is based on stale source evidence."
+        )
+    elif factor_lineage_status == "Incomplete":
+        warnings.append(
+            "At least one selected factor has incomplete source lineage."
         )
 
     components = (

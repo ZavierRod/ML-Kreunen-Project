@@ -123,7 +123,8 @@ model again. Every artifact records:
 - Python, numpy, pandas, and scikit-learn versions
 - Data-content fingerprint and all engine service versions
 - Forecast, coefficients, normalized inputs, contributions, uncertainty,
-  reliability, validation, challenger, regime, and analog evidence
+  reliability, validation, challenger, regime, analog evidence, and per-factor
+  source lineage
 
 Writes are atomic. A corrupt or obsolete artifact is recomputed and repaired. The
 UI's **Recompute cached run** toggle verifies an existing immutable artifact; it
@@ -157,6 +158,8 @@ The command prints and saves:
 - A separately persisted row-level walk-forward prediction ledger
 - Selected hyperparameters
 - Data, target, feature, and model versions
+- Per-factor source columns, source values, observation and availability dates,
+  freshness status, and point-in-time status
 
 Hyperparameters are selected on a chronological tuning window. Residual
 probabilities and intervals use a later calibration window, and interval coverage is
@@ -205,8 +208,32 @@ from six measurable components:
 - Number of close historical analogs
 
 The separate data-quality score uses current factor completeness, historical factor
-coverage, training depth, and point-in-time status. Research-lag-proxy fundamentals
-cap that score below `High` until actual availability timestamps are integrated.
+coverage, training depth, source freshness, and point-in-time status.
+Research-lag-proxy fundamentals cap that score below `High` until actual
+availability timestamps are integrated. Stale source evidence caps the score below
+`Moderate`, and incomplete or future-dated source evidence blocks model execution.
+
+## Factor lineage and freshness
+
+`excess_return_engine/lineage.py` creates a versioned audit record for every
+selected current factor. Each record includes the registered source columns and
+values, normalized model input, source snapshot, observation date, period end,
+availability date, availability rule, age, freshness classification, and
+point-in-time status.
+
+Market factors are traced to the panel's last trading date for the as-of month.
+Fundamental factors are traced to `datadate` and `fund_available_date`. In the
+current WRDS-derived panel, `fund_available_date` is a documented fixed three-month
+research proxy, not an actual filing or announcement timestamp. The engine labels
+each affected factor `research_lag_proxy`, includes that limitation in analyst
+context, and preserves it in immutable run and saved-experiment metadata.
+
+The pre-run gate rejects missing source columns, missing source values, unavailable
+dates, and evidence dated after the forecast as-of date. Fundamental periods older
+than 550 days are marked aging and those older than 730 days are stale. Market
+evidence older than seven days at month-end is stale. Aging and stale evidence
+remain visible in the UI and reduce reliability rather than being silently treated
+as current.
 
 The assessment also reports the current vector's multivariate training-distance
 percentile and selected-factor pairs with absolute historical correlation of at
@@ -274,6 +301,8 @@ restore and compare a run:
 - Expected excess return, positive-return probability, interval, and quality scores
 - Factor contributions, challenger summary, and model, feature, target, and data
   version IDs
+- Factor-lineage version, aggregate freshness score, freshness counts, and
+  research-lag-proxy count
 
 Saved manifests are versioned JSON files under the ignored
 `local_artifacts/excess_return_engine/experiments/` directory. They do not contain

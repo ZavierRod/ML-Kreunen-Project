@@ -256,6 +256,7 @@ def build_forecast_context(
             "feature_version": result.feature_version,
             "target_version": result.target_version,
             "data_version": result.data_version,
+            "lineage_version": getattr(result, "lineage_version", None),
         },
         "numeric_convention": (
             "Returns, probabilities, coefficients, contributions, and coverage "
@@ -307,6 +308,37 @@ def build_forecast_context(
             "Explicit delisting-return integration remains pending.",
         ],
     }
+    lineage = getattr(result, "factor_lineage", None)
+    if lineage is not None:
+        context["factor_lineage"] = {
+            "version": lineage.version,
+            "status": lineage.status,
+            "freshness_score": lineage.freshness_score,
+            "stale_factor_count": lineage.stale_factor_count,
+            "aging_factor_count": lineage.aging_factor_count,
+            "research_proxy_factor_count": (
+                lineage.research_proxy_factor_count
+            ),
+            "factors": [
+                {
+                    "factor_id": factor.factor_id,
+                    "source_system": factor.source_system,
+                    "source_snapshot": factor.source_snapshot,
+                    "source_values": {
+                        item.column: item.value
+                        for item in factor.source_values
+                    },
+                    "observation_date": factor.observation_date,
+                    "period_end_date": factor.period_end_date,
+                    "available_at": factor.available_at,
+                    "freshness": factor.freshness_status,
+                    "point_in_time_status": factor.point_in_time_status,
+                    "availability_rule": factor.availability_rule,
+                    "warnings": list(factor.warnings),
+                }
+                for factor in lineage.factors
+            ],
+        }
     reliability = getattr(result, "reliability", None)
     if reliability is not None:
         context["reliability"] = {

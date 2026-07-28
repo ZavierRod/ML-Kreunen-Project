@@ -2,7 +2,7 @@
 
 Status: Implementation started
 
-Last reviewed: July 27, 2026
+Last reviewed: July 28, 2026
 
 Primary users: equity research analysts, quantitative researchers, investment bankers
 
@@ -151,6 +151,24 @@ Implementation status:
   `16.99%` RMSE, `48.77%` directional accuracy, `80.25%` interval coverage,
   `0.11%` out-of-sample R-squared versus zero, and `-0.025` mean monthly rank IC.
   The UI shows these results separately from the fixed-origin challenger holdout.
+- Versioned selected-factor lineage and freshness assessment is implemented in
+  `excess_return_engine/lineage.py`. Every model input is tied to its registered
+  source columns and values, source snapshot, observation date, period end,
+  availability date, availability rule, freshness classification, and
+  point-in-time status.
+- The pre-run gate and model runner now reject incomplete or future-dated source
+  evidence. Aging and stale values remain visible and lower or cap data quality.
+  Immutable run manifests, saved experiments, the Data tab, JSON output, and LLM
+  context preserve the lineage version and evidence.
+- Market factors use `source_last_trading_date`. Fundamentals use `datadate` and
+  the existing `fund_available_date = datadate + 3 months` field, which is
+  explicitly labeled `research_lag_proxy`; it is not represented as a real filing
+  or announcement timestamp.
+- Real 120-month GOOGL run `2a9aff6c682d57ef` traced all eight selected factors:
+  freshness was `100%`, no factors were stale or aging, and five fundamental
+  factors were explicitly marked as research-lag proxies. Its immutable artifact
+  reloaded from cache with the same eight lineage records and
+  `factor-lineage-v1` manifest version.
 - Delisting-return and actual fundamental-availability-date audits remain open.
 
 ## 1. Feature Summary

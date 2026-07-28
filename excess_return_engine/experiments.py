@@ -10,12 +10,13 @@ from pathlib import Path
 
 from .model import ForecastResult
 
-EXPERIMENT_VERSION = "saved-experiment-v5"
+EXPERIMENT_VERSION = "saved-experiment-v6"
 SUPPORTED_EXPERIMENT_VERSIONS = {
     "saved-experiment-v1",
     "saved-experiment-v2",
     "saved-experiment-v3",
     "saved-experiment-v4",
+    "saved-experiment-v5",
     EXPERIMENT_VERSION,
 }
 MAX_EXPERIMENT_NAME_LENGTH = 80
@@ -72,6 +73,12 @@ class SavedExperiment:
     walk_forward_directional_hit_rate: float | None
     walk_forward_interval_coverage: float | None
     walk_forward_mean_rank_ic: float | None
+    lineage_version: str | None
+    factor_lineage_status: str | None
+    factor_freshness_score: float | None
+    stale_factor_count: int | None
+    aging_factor_count: int | None
+    research_proxy_factor_count: int | None
 
     def to_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -100,6 +107,7 @@ def save_experiment(
     )
     ordered_rmse = sorted(item.rmse for item in challenger.metrics)
     walk_forward = result.walk_forward_diagnostics
+    lineage = result.factor_lineage
     experiment = SavedExperiment(
         experiment_id=experiment_id,
         experiment_version=EXPERIMENT_VERSION,
@@ -154,6 +162,12 @@ def save_experiment(
         ),
         walk_forward_interval_coverage=walk_forward.interval_coverage,
         walk_forward_mean_rank_ic=walk_forward.mean_rank_ic,
+        lineage_version=result.lineage_version,
+        factor_lineage_status=lineage.status,
+        factor_freshness_score=lineage.freshness_score,
+        stale_factor_count=lineage.stale_factor_count,
+        aging_factor_count=lineage.aging_factor_count,
+        research_proxy_factor_count=lineage.research_proxy_factor_count,
     )
     destination = Path(output_dir).expanduser().resolve()
     destination.mkdir(parents=True, exist_ok=True)
@@ -201,6 +215,7 @@ def comparison_warnings(
         ("model_version", "model version"),
         ("challenger_version", "challenger-suite version"),
         ("walk_forward_version", "walk-forward version"),
+        ("lineage_version", "factor-lineage version"),
     )
     warnings = []
     for field, label in checks:
@@ -260,6 +275,18 @@ def comparison_records(
                 item.walk_forward_interval_coverage
             ),
             "Mean monthly rank IC": item.walk_forward_mean_rank_ic,
+            "Factor lineage": (
+                getattr(item, "factor_lineage_status", None)
+                or "Not recorded"
+            ),
+            "Factor freshness": getattr(
+                item, "factor_freshness_score", None
+            ),
+            "Stale factors": getattr(item, "stale_factor_count", None),
+            "Aging factors": getattr(item, "aging_factor_count", None),
+            "Research-lag factors": getattr(
+                item, "research_proxy_factor_count", None
+            ),
             "Run ID": item.configuration_id,
         }
         for item in experiments
@@ -396,6 +423,18 @@ def _experiment_from_dict(payload: dict[str, object]) -> SavedExperiment:
         walk_forward_mean_rank_ic=_optional_float(
             payload.get("walk_forward_mean_rank_ic")
         ),
+        lineage_version=_optional_string(payload.get("lineage_version")),
+        factor_lineage_status=_optional_string(
+            payload.get("factor_lineage_status")
+        ),
+        factor_freshness_score=_optional_float(
+            payload.get("factor_freshness_score")
+        ),
+        stale_factor_count=_optional_int(payload.get("stale_factor_count")),
+        aging_factor_count=_optional_int(payload.get("aging_factor_count")),
+        research_proxy_factor_count=_optional_int(
+            payload.get("research_proxy_factor_count")
+        ),
     )
 
 
@@ -405,3 +444,7 @@ def _optional_string(value: object) -> str | None:
 
 def _optional_float(value: object) -> float | None:
     return None if value is None else float(value)
+
+
+def _optional_int(value: object) -> int | None:
+    return None if value is None else int(value)

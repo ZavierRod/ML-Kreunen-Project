@@ -33,6 +33,11 @@ from .features import (
     ranked_factor_column,
     validate_factor_selection,
 )
+from .lineage import (
+    LINEAGE_VERSION,
+    FactorLineageAssessment,
+    assess_factor_lineage,
+)
 from .reliability import (
     RELIABILITY_VERSION,
     ReliabilityAssessment,
@@ -50,7 +55,7 @@ from .walk_forward import (
     evaluate_walk_forward,
 )
 
-MODEL_VERSION = "elastic-net-panel-v6"
+MODEL_VERSION = "elastic-net-panel-v7"
 TARGET_VERSION = "calendar-excess-return-v1"
 TARGET_COLUMN = "excess_return_next_month"
 MONTH_COLUMN = "month_end"
@@ -119,6 +124,7 @@ class ForecastResult:
     reliability_version: str
     validation_version: str
     walk_forward_version: str
+    lineage_version: str
     feature_version: str
     target_version: str
     data_version: str
@@ -143,6 +149,7 @@ class ForecastResult:
     reliability: ReliabilityAssessment
     validation_diagnostics: ValidationDiagnostics
     walk_forward_diagnostics: WalkForwardDiagnostics
+    factor_lineage: FactorLineageAssessment
     challenger_diagnostics: ChallengerDiagnostics
     model_parameters: dict[str, float]
     validation_metrics: dict[str, float | int]
@@ -419,6 +426,7 @@ def _configuration_id(
         "reliability_version": RELIABILITY_VERSION,
         "validation_version": VALIDATION_VERSION,
         "walk_forward_version": WALK_FORWARD_VERSION,
+        "lineage_version": LINEAGE_VERSION,
         "runtime_versions": runtime_versions(),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
@@ -753,6 +761,15 @@ def generate_forecast_computation(
         )[0]
     )
     normalized_values = x_current[0]
+    normalized_by_factor = dict(zip(selected, normalized_values))
+    factor_lineage = assess_factor_lineage(
+        current,
+        selected,
+        as_of,
+        normalized_values=normalized_by_factor,
+        source_snapshot=scope.data_version,
+        strict=True,
+    )
     current_regime = classify_factor_regimes(selected, normalized_values)
     historical_evidence = find_similar_conditions(
         ranked_historical,
@@ -780,17 +797,17 @@ def generate_forecast_computation(
     if not np.isclose(reconciled, point_forecast, atol=1e-10):
         raise RuntimeError("Factor contributions do not reconcile to the forecast.")
 
-    raw_current = inference[
-        (inference[SECURITY_COLUMN] == request.permno)
-        & (inference[MONTH_COLUMN] == as_of)
-    ].iloc[0]
     selected_completeness = float(
-        raw_current[list(selected)].notna().mean()
+        current[list(selected)].notna().mean()
     )
     training_coverage = float(
         historical[list(selected)].notna().mean().mean()
     )
-    point_in_time_status = "research_lag_proxy"
+    point_in_time_status = (
+        "research_lag_proxy"
+        if factor_lineage.research_proxy_factor_count
+        else "verified"
+    )
     reliability = assess_reliability(
         historical=ranked_historical,
         selected_factors=selected,
@@ -806,6 +823,8 @@ def generate_forecast_computation(
         analog_similarities=tuple(
             analog.similarity for analog in historical_evidence.analogs
         ),
+        factor_freshness_score=factor_lineage.freshness_score,
+        factor_lineage_status=factor_lineage.status,
     )
 
     result = ForecastResult(
@@ -826,6 +845,7 @@ def generate_forecast_computation(
         reliability_version=RELIABILITY_VERSION,
         validation_version=VALIDATION_VERSION,
         walk_forward_version=WALK_FORWARD_VERSION,
+        lineage_version=LINEAGE_VERSION,
         feature_version=FEATURE_VERSION,
         target_version=TARGET_VERSION,
         data_version=scope.data_version,
@@ -850,6 +870,7 @@ def generate_forecast_computation(
         reliability=reliability,
         validation_diagnostics=validation_diagnostics,
         walk_forward_diagnostics=walk_forward.diagnostics,
+        factor_lineage=factor_lineage,
         challenger_diagnostics=challenger_diagnostics,
         model_parameters=best,
         validation_metrics=metrics,
@@ -860,6 +881,17 @@ def generate_forecast_computation(
             "training_months": int(ranked_historical[MONTH_COLUMN].nunique()),
             "calibration_residual_rows": int(len(calibration_residuals)),
             "point_in_time_status": point_in_time_status,
+            "factor_lineage_status": factor_lineage.status,
+            "factor_freshness_score": factor_lineage.freshness_score,
+            "stale_selected_factors": (
+                factor_lineage.stale_factor_count
+            ),
+            "aging_selected_factors": (
+                factor_lineage.aging_factor_count
+            ),
+            "research_proxy_selected_factors": (
+                factor_lineage.research_proxy_factor_count
+            ),
         },
         target_clip_bounds=final_clip_bounds,
     )

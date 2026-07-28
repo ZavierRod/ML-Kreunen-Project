@@ -11,6 +11,7 @@ from ui.excess_return_engine.presentation import (
     configuration_quality,
     correlation_warning_table,
     factor_option_label,
+    factor_lineage_table,
     experiment_comparison_table,
     experiment_contribution_table,
     historical_analog_table,
@@ -134,7 +135,16 @@ class PresentationTests(unittest.TestCase):
                 "excess_return_next_month": 0.01,
             }
         )
-        inference = pd.DataFrame([{"permno": 1, "size": 1.0}])
+        inference = pd.DataFrame(
+            [
+                {
+                    "permno": 1,
+                    "size": 1.0,
+                    "market_cap": 100.0,
+                    "source_last_trading_date": months[120],
+                }
+            ]
+        )
 
         quality = configuration_quality(
             training,
@@ -147,6 +157,38 @@ class PresentationTests(unittest.TestCase):
         self.assertEqual(quality["status"], "ready")
         self.assertEqual(quality["training_months"], 120)
         self.assertEqual(quality["training_rows"], 120)
+        self.assertEqual(quality["factor_lineage"].status, "Verified")
+
+    def test_factor_lineage_table_exposes_source_evidence(self) -> None:
+        result = SimpleNamespace(
+            factor_lineage=SimpleNamespace(
+                factors=(
+                    SimpleNamespace(
+                        label="Size",
+                        category="Market",
+                        raw_value=10.0,
+                        normalized_value=0.5,
+                        observation_date="2025-12-31",
+                        period_end_date="2025-12-31",
+                        available_at="2025-12-31",
+                        age_days=0,
+                        freshness_status="Current",
+                        point_in_time_status="month_end_observed",
+                        source_values=(
+                            SimpleNamespace(
+                                column="market_cap",
+                                value=100.0,
+                            ),
+                        ),
+                    ),
+                )
+            )
+        )
+
+        table = factor_lineage_table(result)
+
+        self.assertEqual(table.iloc[0]["Factor"], "Size")
+        self.assertIn("market_cap=100.0", table.iloc[0]["Source evidence"])
 
     def test_factor_labels_and_predictive_strength_are_explicit(self) -> None:
         self.assertEqual(factor_option_label("size"), "Size · Market")

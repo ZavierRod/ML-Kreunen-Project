@@ -13,6 +13,7 @@ from excess_return_engine.experiments import (
     contribution_records,
 )
 from excess_return_engine.features import FACTOR_REGISTRY
+from excess_return_engine.lineage import assess_factor_lineage
 from excess_return_engine.model import ForecastResult
 
 FACTOR_PRESETS = {
@@ -167,6 +168,19 @@ def configuration_quality(
     current_completeness = float(
         current.iloc[0][list(selected_factors)].notna().mean()
     )
+    lineage = (
+        assess_factor_lineage(
+            current.iloc[0],
+            selected_factors,
+            as_of_date,
+            source_snapshot=str(
+                inference.attrs.get("data_version", "preflight")
+            ),
+            strict=False,
+        )
+        if as_of_date is not None
+        else None
+    )
     historical_coverage = float(
         relevant[list(selected_factors)].notna().mean().mean()
     )
@@ -203,6 +217,11 @@ def configuration_quality(
     elif historical_coverage < 0.70:
         status = "blocked"
         message = "Historical selected-factor coverage must be at least 70%."
+    elif lineage is not None and lineage.incomplete_factor_count:
+        status = "blocked"
+        message = (
+            "Selected-factor source lineage is incomplete for this as-of date."
+        )
 
     return {
         "status": status,
@@ -212,6 +231,7 @@ def configuration_quality(
         "current_completeness": current_completeness,
         "historical_coverage": historical_coverage,
         "correlated_pairs": tuple(correlated_pairs),
+        "factor_lineage": lineage,
     }
 
 
@@ -233,6 +253,31 @@ def contribution_table(result: ForecastResult) -> pd.DataFrame:
         "contribution",
         key=lambda values: values.abs(),
         ascending=False,
+    )
+
+
+def factor_lineage_table(result: ForecastResult) -> pd.DataFrame:
+    """Return selected-factor source evidence in an audit-friendly table."""
+    return pd.DataFrame(
+        [
+            {
+                "Factor": factor.label,
+                "Category": factor.category,
+                "Raw value": factor.raw_value,
+                "Normalized": factor.normalized_value,
+                "Observation date": factor.observation_date,
+                "Period end": factor.period_end_date,
+                "Available at": factor.available_at,
+                "Age (days)": factor.age_days,
+                "Freshness": factor.freshness_status,
+                "PIT status": factor.point_in_time_status,
+                "Source evidence": "; ".join(
+                    f"{item.column}={item.value}"
+                    for item in factor.source_values
+                ),
+            }
+            for factor in result.factor_lineage.factors
+        ]
     )
 
 

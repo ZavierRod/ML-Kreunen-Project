@@ -226,6 +226,43 @@ class ForecastAnalystTests(unittest.TestCase):
             "BBB",
         )
 
+    def test_context_includes_compact_factor_lineage(self) -> None:
+        result = forecast_result()
+        result.lineage_version = "factor-lineage-v1"
+        result.factor_lineage = SimpleNamespace(
+            version="factor-lineage-v1",
+            status="Verified",
+            freshness_score=1.0,
+            stale_factor_count=0,
+            aging_factor_count=0,
+            research_proxy_factor_count=0,
+            factors=(
+                SimpleNamespace(
+                    factor_id="size",
+                    source_system="wrds-derived-research-panel",
+                    source_snapshot="data-v1",
+                    source_values=(
+                        SimpleNamespace(column="market_cap", value=100.0),
+                    ),
+                    observation_date="2025-12-31",
+                    period_end_date="2025-12-31",
+                    available_at="2025-12-31",
+                    freshness_status="Current",
+                    point_in_time_status="month_end_observed",
+                    availability_rule="Observed at month end.",
+                    warnings=(),
+                ),
+            ),
+        )
+
+        context = analyst.build_forecast_context(result)
+
+        self.assertEqual(context["factor_lineage"]["status"], "Verified")
+        self.assertEqual(
+            context["factor_lineage"]["factors"][0]["source_values"],
+            {"market_cap": 100.0},
+        )
+
     def test_context_includes_post_forecast_replay_outcome(self) -> None:
         context = analyst.build_forecast_context(
             forecast_result(),

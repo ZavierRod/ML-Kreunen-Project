@@ -43,6 +43,7 @@ from ui.excess_return_engine.presentation import (
     configuration_quality,
     correlation_warning_table,
     contribution_table,
+    factor_lineage_table,
     factor_option_label,
     experiment_comparison_table,
     experiment_contribution_table,
@@ -716,6 +717,16 @@ if quality["correlated_pairs"]:
         "Selected factors include correlations of at least 0.85. Run-level "
         "reliability will report the affected pairs."
     )
+preflight_lineage = quality.get("factor_lineage")
+if preflight_lineage is not None and preflight_lineage.status in {
+    "Aging",
+    "Stale",
+}:
+    st.warning(
+        f"Selected-factor source freshness is "
+        f"{preflight_lineage.status.lower()} "
+        f"({preflight_lineage.freshness_score:.0%} score)."
+    )
 
 run_forecast = st.button(
     "Run forecast",
@@ -1193,12 +1204,29 @@ with data_tab:
         for key, value in result.data_quality.items()
     ]
     st.dataframe(pd.DataFrame(quality_rows), hide_index=True, width="stretch")
+    lineage = result.factor_lineage
+    st.markdown("**Selected factor lineage**")
+    st.caption(
+        f"Status: {lineage.status} · Freshness: "
+        f"{lineage.freshness_score:.0%} · Stale: "
+        f"{lineage.stale_factor_count} · Aging: "
+        f"{lineage.aging_factor_count} · Research-lag proxy: "
+        f"{lineage.research_proxy_factor_count}"
+    )
+    st.dataframe(
+        factor_lineage_table(result),
+        hide_index=True,
+        width="stretch",
+    )
+    if lineage.warnings:
+        st.caption(" ".join(dict.fromkeys(lineage.warnings)))
     st.caption(
         f"Data: {result.data_version} · Target: {result.target_version} · "
         f"Features: {result.feature_version} · Model: {result.model_version} · "
         f"Reliability: {result.reliability_version} · "
         f"Validation: {result.validation_version} · "
         f"Walk forward: {result.walk_forward_version} · "
+        f"Lineage: {result.lineage_version} · "
         f"Challengers: {result.challenger_version} · "
         f"Replay: {result.replay_version or 'not applicable'}"
     )

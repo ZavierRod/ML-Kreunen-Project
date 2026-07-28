@@ -90,6 +90,35 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(assessment.data_quality_label, "High")
         self.assertEqual(assessment.warnings, ())
 
+    def test_stale_lineage_caps_data_quality(self) -> None:
+        rng = np.random.default_rng(4)
+        historical = pd.DataFrame({"size": rng.uniform(-1, 1, 200)})
+
+        assessment = assess_reliability(
+            historical=historical,
+            selected_factors=("size",),
+            normalized_values=np.array([0.0]),
+            validation_metrics={
+                "oos_r2_vs_zero": 0.04,
+                "brier_score": 0.18,
+                "brier_baseline": 0.25,
+                "interval_coverage": 0.80,
+            },
+            interval_level=0.80,
+            calibration_coefficients=np.array([0.1]),
+            final_coefficients=np.array([0.1]),
+            selected_factor_completeness=1.0,
+            historical_factor_coverage=1.0,
+            training_months=150,
+            point_in_time_status="verified",
+            analog_similarities=(0.99,) * 12,
+            factor_freshness_score=0.0,
+            factor_lineage_status="Stale",
+        )
+
+        self.assertEqual(assessment.data_quality_score, 59.0)
+        self.assertIn("stale source evidence", " ".join(assessment.warnings))
+
 
 if __name__ == "__main__":
     unittest.main()

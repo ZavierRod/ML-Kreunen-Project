@@ -65,6 +65,14 @@ def forecast_result(
             interval_coverage=0.8,
             mean_rank_ic=0.03,
         ),
+        lineage_version="lineage-v1",
+        factor_lineage=SimpleNamespace(
+            status="Research lag proxy",
+            freshness_score=1.0,
+            stale_factor_count=0,
+            aging_factor_count=0,
+            research_proxy_factor_count=1,
+        ),
         challenger_version="challenger-v1",
         challenger_diagnostics=SimpleNamespace(
             leader_model_id="ols",
@@ -139,6 +147,10 @@ class ExperimentTests(unittest.TestCase):
             self.assertEqual(comparison[0]["Production RMSE rank"], 2)
             self.assertEqual(comparison[0]["Walk-forward RMSE"], 0.09)
             self.assertEqual(
+                comparison[0]["Factor lineage"],
+                "Research lag proxy",
+            )
+            self.assertEqual(
                 comparison[0]["Expected-return delta vs first"],
                 0.0,
             )
@@ -171,6 +183,12 @@ class ExperimentTests(unittest.TestCase):
             payload.pop("walk_forward_directional_hit_rate")
             payload.pop("walk_forward_interval_coverage")
             payload.pop("walk_forward_mean_rank_ic")
+            payload.pop("lineage_version")
+            payload.pop("factor_lineage_status")
+            payload.pop("factor_freshness_score")
+            payload.pop("stale_factor_count")
+            payload.pop("aging_factor_count")
+            payload.pop("research_proxy_factor_count")
             Path(path).write_text(json.dumps(payload), encoding="utf-8")
 
             listed = list_experiments(directory)

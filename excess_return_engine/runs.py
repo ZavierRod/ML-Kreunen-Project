@@ -183,6 +183,7 @@ def execute_forecast(
             "reliability_version": result.reliability_version,
             "validation_version": result.validation_version,
             "walk_forward_version": result.walk_forward_version,
+            "lineage_version": result.lineage_version,
             "replay_version": result.replay_version,
         },
         "walk_forward_predictions": {
