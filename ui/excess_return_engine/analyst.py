@@ -330,6 +330,28 @@ def build_forecast_context(
             ],
             "warnings": list(reliability.warnings),
         }
+    challenger = getattr(result, "challenger_diagnostics", None)
+    if challenger is not None:
+        context["challenger_diagnostics"] = {
+            "version": challenger.version,
+            "leader_model_id": challenger.leader_model_id,
+            "sampled_training_rows": challenger.sampled_training_rows,
+            "evaluation_rows": challenger.evaluation_rows,
+            "forecast_source": "elastic_net",
+            "metrics": [
+                {
+                    "model_id": item.model_id,
+                    "label": item.label,
+                    "training_rows": item.training_rows,
+                    "evaluation_rows": item.evaluation_rows,
+                    "mae": item.mae,
+                    "rmse": item.rmse,
+                    "directional_hit_rate": item.directional_hit_rate,
+                    "oos_r2_vs_zero": item.oos_r2_vs_zero,
+                }
+                for item in challenger.metrics
+            ],
+        }
     diagnostics = getattr(result, "validation_diagnostics", None)
     if diagnostics is not None:
         context["validation_diagnostics"] = {

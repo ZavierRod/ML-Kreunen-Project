@@ -5,6 +5,7 @@ import pandas as pd
 
 from ui.excess_return_engine.presentation import (
     calibration_table,
+    challenger_diagnostics_table,
     company_options,
     configuration_quality,
     correlation_warning_table,
@@ -219,6 +220,9 @@ class PresentationTests(unittest.TestCase):
             data_quality_score=79.0,
             oos_r2_vs_zero=0.002,
             interval_coverage=0.8,
+            challenger_leader_model_id="ols",
+            production_rmse=0.12,
+            production_rmse_rank=2,
             contributions=(
                 SimpleNamespace(factor_id="size", contribution=0.001),
             ),
@@ -229,6 +233,74 @@ class PresentationTests(unittest.TestCase):
 
         self.assertEqual(comparison.iloc[0]["Factor set"], "Size")
         self.assertEqual(contributions.iloc[0]["Factor"], "Size")
+
+    def test_legacy_experiment_comparison_can_format_missing_challengers(
+        self,
+    ) -> None:
+        experiment = SimpleNamespace(
+            name="Legacy",
+            configuration_id="legacy123",
+            ticker="AAA",
+            permno=1,
+            selected_factors=("size",),
+            expected_excess_return=0.01,
+            probability_positive=0.55,
+            interval_lower=-0.05,
+            interval_upper=0.07,
+            model_reliability_score=65.0,
+            data_quality_score=79.0,
+            oos_r2_vs_zero=0.002,
+            interval_coverage=0.8,
+            training_window_months=None,
+            challenger_leader_model_id=None,
+            production_rmse=None,
+            production_rmse_rank=None,
+            contributions=(),
+        )
+
+        table = experiment_comparison_table((experiment,))
+        styled = table.style.format(
+            {"Production RMSE": "{:.2%}"},
+            na_rep="Not recorded",
+        )
+
+        self.assertIn("Not recorded", styled.to_html())
+
+    def test_challenger_table_marks_production_and_leader(self) -> None:
+        result = SimpleNamespace(
+            challenger_diagnostics=SimpleNamespace(
+                leader_model_id="ols",
+                metrics=(
+                    SimpleNamespace(
+                        model_id="elastic_net",
+                        label="Production Elastic Net",
+                        training_rows=1_000,
+                        evaluation_rows=100,
+                        mae=0.08,
+                        rmse=0.10,
+                        directional_hit_rate=0.51,
+                        oos_r2_vs_zero=0.01,
+                    ),
+                    SimpleNamespace(
+                        model_id="ols",
+                        label="Ordinary least squares",
+                        training_rows=500,
+                        evaluation_rows=100,
+                        mae=0.07,
+                        rmse=0.09,
+                        directional_hit_rate=0.53,
+                        oos_r2_vs_zero=0.03,
+                    ),
+                ),
+            )
+        )
+
+        table = challenger_diagnostics_table(result)
+
+        leader = table.loc[table["Best RMSE"]].iloc[0]
+        production = table.loc[table["Role"] == "Production"].iloc[0]
+        self.assertEqual(leader["Model"], "Ordinary least squares")
+        self.assertAlmostEqual(production["RMSE vs production"], 0.0)
 
 
 if __name__ == "__main__":

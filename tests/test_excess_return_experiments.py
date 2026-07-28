@@ -55,6 +55,15 @@ def forecast_result(
         model_version="model-v1",
         reliability_version="reliability-v1",
         validation_version="validation-v1",
+        challenger_version="challenger-v1",
+        challenger_diagnostics=SimpleNamespace(
+            leader_model_id="ols",
+            metrics=(
+                SimpleNamespace(model_id="zero", rmse=0.10),
+                SimpleNamespace(model_id="elastic_net", rmse=0.08),
+                SimpleNamespace(model_id="ols", rmse=0.07),
+            ),
+        ),
     )
 
 
@@ -116,6 +125,8 @@ class ExperimentTests(unittest.TestCase):
 
             self.assertEqual(comparison[0]["Run ID"], "run-a")
             self.assertEqual(comparison[0]["Factors"], 2)
+            self.assertEqual(comparison[0]["Best holdout model"], "ols")
+            self.assertEqual(comparison[0]["Production RMSE rank"], 2)
             self.assertEqual(
                 comparison[0]["Expected-return delta vs first"],
                 0.0,
@@ -137,12 +148,18 @@ class ExperimentTests(unittest.TestCase):
             payload = experiment.to_dict()
             payload["experiment_version"] = "saved-experiment-v1"
             payload.pop("training_window_months")
+            payload.pop("challenger_version")
+            payload.pop("challenger_leader_model_id")
+            payload.pop("production_rmse")
+            payload.pop("production_rmse_rank")
             Path(path).write_text(json.dumps(payload), encoding="utf-8")
 
             listed = list_experiments(directory)
 
             self.assertEqual(len(listed), 1)
             self.assertIsNone(listed[0].training_window_months)
+            self.assertIsNone(listed[0].challenger_version)
+            self.assertIsNone(listed[0].production_rmse)
 
 
 if __name__ == "__main__":

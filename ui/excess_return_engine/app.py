@@ -35,6 +35,7 @@ from ui.excess_return_engine import analyst
 from ui.excess_return_engine.presentation import (
     FACTOR_PRESETS,
     calibration_table,
+    challenger_diagnostics_table,
     company_options,
     configuration_quality,
     correlation_warning_table,
@@ -287,7 +288,9 @@ def render_experiment_workspace(result) -> None:
                 "Data quality": "{:.0f}/100",
                 "OOS R² vs zero": "{:+.2%}",
                 "Interval coverage": "{:.1%}",
-            }
+                "Production RMSE": "{:.2%}",
+            },
+            na_rep="Not recorded",
         ),
         hide_index=True,
         width="stretch",
@@ -946,6 +949,47 @@ with validation_tab:
         hide_index=True,
         width="stretch",
     )
+    st.markdown("**Challenger model comparison**")
+    st.caption(
+        "All models are scored on the same untouched holdout. Challenger "
+        "training is deterministically capped; only Elastic Net produces the "
+        "forecast and factor attribution."
+    )
+    challenger_comparison = challenger_diagnostics_table(result)
+    challenger_metrics = {
+        item.model_id: item
+        for item in result.challenger_diagnostics.metrics
+    }
+    leader_metric = challenger_metrics[
+        result.challenger_diagnostics.leader_model_id
+    ]
+    production_metric = challenger_metrics["elastic_net"]
+    if leader_metric.model_id == "elastic_net":
+        st.success("Production Elastic Net has the lowest holdout RMSE.")
+    else:
+        st.warning(
+            f"{leader_metric.label} has the lowest holdout RMSE, beating "
+            "production Elastic Net by "
+            f"{production_metric.rmse - leader_metric.rmse:.3%}. "
+            "The production model is retained for its regularized, directly "
+            "reconcilable attribution until the challenger advantage is "
+            "repeatable across windows and regimes."
+        )
+    st.dataframe(
+        challenger_comparison.style.format(
+            {
+                "Training rows": "{:,.0f}",
+                "Evaluation rows": "{:,.0f}",
+                "MAE": "{:.2%}",
+                "RMSE": "{:.2%}",
+                "RMSE vs production": "{:+.2%}",
+                "Directional hit rate": "{:.1%}",
+                "OOS R² vs zero": "{:+.2%}",
+            }
+        ),
+        hide_index=True,
+        width="stretch",
+    )
 with data_tab:
     quality_rows = [
         {"Component": key.replace("_", " ").title(), "Value": str(value)}
@@ -956,7 +1000,8 @@ with data_tab:
         f"Data: {result.data_version} · Target: {result.target_version} · "
         f"Features: {result.feature_version} · Model: {result.model_version} · "
         f"Reliability: {result.reliability_version} · "
-        f"Validation: {result.validation_version}"
+        f"Validation: {result.validation_version} · "
+        f"Challengers: {result.challenger_version}"
     )
 
 render_experiment_workspace(result)

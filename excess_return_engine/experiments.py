@@ -10,9 +10,10 @@ from pathlib import Path
 
 from .model import ForecastResult
 
-EXPERIMENT_VERSION = "saved-experiment-v2"
+EXPERIMENT_VERSION = "saved-experiment-v3"
 SUPPORTED_EXPERIMENT_VERSIONS = {
     "saved-experiment-v1",
+    "saved-experiment-v2",
     EXPERIMENT_VERSION,
 }
 MAX_EXPERIMENT_NAME_LENGTH = 80
@@ -57,6 +58,10 @@ class SavedExperiment:
     model_version: str
     reliability_version: str
     validation_version: str
+    challenger_version: str | None
+    challenger_leader_model_id: str | None
+    production_rmse: float | None
+    production_rmse_rank: int | None
 
     def to_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -77,6 +82,13 @@ def save_experiment(
     clean_name = _validate_name(name)
     timestamp = (saved_at or datetime.now(UTC)).astimezone(UTC)
     experiment_id = _experiment_id(clean_name, result.configuration_id)
+    challenger = result.challenger_diagnostics
+    production_metric = next(
+        item
+        for item in challenger.metrics
+        if item.model_id == "elastic_net"
+    )
+    ordered_rmse = sorted(item.rmse for item in challenger.metrics)
     experiment = SavedExperiment(
         experiment_id=experiment_id,
         experiment_version=EXPERIMENT_VERSION,
@@ -117,6 +129,10 @@ def save_experiment(
         model_version=result.model_version,
         reliability_version=result.reliability_version,
         validation_version=result.validation_version,
+        challenger_version=result.challenger_version,
+        challenger_leader_model_id=challenger.leader_model_id,
+        production_rmse=production_metric.rmse,
+        production_rmse_rank=ordered_rmse.index(production_metric.rmse) + 1,
     )
     destination = Path(output_dir).expanduser().resolve()
     destination.mkdir(parents=True, exist_ok=True)
@@ -161,6 +177,8 @@ def comparison_warnings(
         ("benchmark_id", "benchmark"),
         ("training_window_months", "training window"),
         ("data_version", "data version"),
+        ("model_version", "model version"),
+        ("challenger_version", "challenger-suite version"),
     )
     warnings = []
     for field, label in checks:
@@ -203,6 +221,9 @@ def comparison_records(
             "Data quality": item.data_quality_score,
             "OOS R² vs zero": item.oos_r2_vs_zero,
             "Interval coverage": item.interval_coverage,
+            "Best holdout model": item.challenger_leader_model_id or "Not recorded",
+            "Production RMSE": item.production_rmse,
+            "Production RMSE rank": item.production_rmse_rank,
             "Run ID": item.configuration_id,
         }
         for item in experiments
@@ -301,6 +322,22 @@ def _experiment_from_dict(payload: dict[str, object]) -> SavedExperiment:
         model_version=str(payload["model_version"]),
         reliability_version=str(payload["reliability_version"]),
         validation_version=str(payload["validation_version"]),
+        challenger_version=_optional_string(
+            payload.get("challenger_version")
+        ),
+        challenger_leader_model_id=_optional_string(
+            payload.get("challenger_leader_model_id")
+        ),
+        production_rmse=(
+            None
+            if payload.get("production_rmse") is None
+            else float(payload["production_rmse"])
+        ),
+        production_rmse_rank=(
+            None
+            if payload.get("production_rmse_rank") is None
+            else int(payload["production_rmse_rank"])
+        ),
     )
 
 

@@ -150,6 +150,28 @@ least `0.85`. Failed baseline comparisons, poor interval coverage, distribution
 shift, sparse analog coverage, correlation, and point-in-time limitations remain
 explicit warnings in the forecast JSON and UI.
 
+## Challenger model diagnostics
+
+Every forecast now evaluates five model rows on the same untouched final holdout:
+
+- Zero excess-return baseline
+- Production Elastic Net
+- Ordinary least squares
+- Random forest
+- One-hidden-layer neural network
+
+The production Elastic Net is fit using the existing chronological design. OLS,
+random forest, and the neural network train only on observations before the
+holdout, using one deterministic sample capped at 20,000 rows. The saved diagnostic
+records each model's training and evaluation row counts, MAE, RMSE, directional hit
+rate, and out-of-sample R-squared against zero.
+
+Challengers are evidence, not forecast sources. They do not change the expected
+return, probability, interval, or factor contributions. The UI identifies the
+lowest-RMSE model and explicitly warns when a challenger wins; replacement requires
+a repeatable advantage across windows and regimes while preserving the
+interpretability required by the intended workflow.
+
 Forecasts are research outputs. The current benchmark is the lagged-cap-weighted
 covered universe, fundamentals use the documented availability-lag proxy, and
 explicit CRSP delisting returns are still pending an additional source extract.
@@ -185,7 +207,8 @@ restore and compare a run:
 - Permanent security ID, display ticker, company name, and as-of date
 - Selected factor IDs, training window, interval level, target, and benchmark
 - Expected excess return, positive-return probability, interval, and quality scores
-- Factor contributions and model, feature, target, and data version IDs
+- Factor contributions, challenger summary, and model, feature, target, and data
+  version IDs
 
 Saved manifests are versioned JSON files under the ignored
 `local_artifacts/excess_return_engine/experiments/` directory. They do not contain

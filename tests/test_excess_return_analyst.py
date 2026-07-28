@@ -70,6 +70,34 @@ def forecast_result() -> SimpleNamespace:
             "selected_factor_completeness": 1.0,
             "point_in_time_status": "research_lag_proxy",
         },
+        challenger_diagnostics=SimpleNamespace(
+            version="challenger-v1",
+            leader_model_id="ols",
+            sampled_training_rows=500,
+            evaluation_rows=100,
+            metrics=(
+                SimpleNamespace(
+                    model_id="elastic_net",
+                    label="Production Elastic Net",
+                    training_rows=1_000,
+                    evaluation_rows=100,
+                    mae=0.08,
+                    rmse=0.10,
+                    directional_hit_rate=0.51,
+                    oos_r2_vs_zero=0.01,
+                ),
+                SimpleNamespace(
+                    model_id="ols",
+                    label="Ordinary least squares",
+                    training_rows=500,
+                    evaluation_rows=100,
+                    mae=0.07,
+                    rmse=0.09,
+                    directional_hit_rate=0.53,
+                    oos_r2_vs_zero=0.03,
+                ),
+            ),
+        ),
     )
 
 
@@ -176,6 +204,14 @@ class ForecastAnalystTests(unittest.TestCase):
         self.assertIn(
             "calibration residual",
             context["forecast"]["probability_method"],
+        )
+        self.assertEqual(
+            context["challenger_diagnostics"]["leader_model_id"],
+            "ols",
+        )
+        self.assertEqual(
+            context["challenger_diagnostics"]["forecast_source"],
+            "elastic_net",
         )
 
     def test_context_can_include_analog_rows_explicitly(self) -> None:

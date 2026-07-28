@@ -286,6 +286,38 @@ def yearly_validation_table(result: ForecastResult) -> pd.DataFrame:
     )
 
 
+def challenger_diagnostics_table(result: ForecastResult) -> pd.DataFrame:
+    diagnostics = result.challenger_diagnostics
+    production = next(
+        item
+        for item in diagnostics.metrics
+        if item.model_id == "elastic_net"
+    )
+    return pd.DataFrame(
+        [
+            {
+                "Model": item.label,
+                "Role": (
+                    "Production"
+                    if item.model_id == "elastic_net"
+                    else "Baseline"
+                    if item.model_id == "zero"
+                    else "Challenger"
+                ),
+                "Training rows": item.training_rows,
+                "Evaluation rows": item.evaluation_rows,
+                "MAE": item.mae,
+                "RMSE": item.rmse,
+                "RMSE vs production": item.rmse - production.rmse,
+                "Directional hit rate": item.directional_hit_rate,
+                "OOS R² vs zero": item.oos_r2_vs_zero,
+                "Best RMSE": item.model_id == diagnostics.leader_model_id,
+            }
+            for item in diagnostics.metrics
+        ]
+    ).sort_values(["RMSE", "Model"], ignore_index=True)
+
+
 def experiment_comparison_table(
     experiments: tuple[SavedExperiment, ...],
 ) -> pd.DataFrame:

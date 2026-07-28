@@ -101,6 +101,20 @@ Implementation status:
   390-pixel mobile width. Its expected excess return was `-0.3%`, with `47.3%`
   positive probability, an 80% interval of `-13.3%` to `+12.5%`, and `65/100`
   model reliability.
+- Versioned challenger diagnostics are implemented in
+  `excess_return_engine/challengers.py`. Zero, production Elastic Net, OLS, random
+  forest, and a neural network are evaluated on the same untouched holdout. The
+  challengers use only earlier rows and one deterministic 20,000-row training cap;
+  they cannot alter the production forecast or attribution.
+- The real 120-month GOOGL challenger run completed in 2.5 seconds over 92,017
+  evaluation rows. OLS narrowly led RMSE at `16.985%`, followed by random forest at
+  `16.987%` and Elastic Net at `16.991%`; the neural network underperformed the zero
+  baseline. The UI discloses the leader and retains Elastic Net pending
+  repeatability across windows and regimes.
+- A renewed source audit confirmed that `DatasetKreunenTest` still contains
+  `DlyRet` without an explicit delisting-return field and derives
+  `fund_available_date` as `datadate + 3 months`; no `rdq`, filing date, or revision
+  timestamp is present.
 - Delisting-return and actual fundamental-availability-date audits remain open.
 
 ## 1. Feature Summary

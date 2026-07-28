@@ -7,6 +7,7 @@ from excess_return_engine.evidence import (
     classify_factor_regimes,
     find_similar_conditions,
 )
+from excess_return_engine.challengers import CHALLENGER_VERSION
 from excess_return_engine.model import (
     ForecastRequest,
     _empirical_probability_positive,
@@ -157,6 +158,15 @@ class ForecastTests(unittest.TestCase):
         self.assertLessEqual(result.reliability.model_reliability_score, 100)
         self.assertEqual(result.reliability_version, RELIABILITY_VERSION)
         self.assertEqual(result.validation_version, VALIDATION_VERSION)
+        self.assertEqual(result.challenger_version, CHALLENGER_VERSION)
+        self.assertEqual(len(result.challenger_diagnostics.metrics), 5)
+        self.assertTrue(
+            all(
+                item.evaluation_rows
+                == result.validation_metrics["evaluation_rows"]
+                for item in result.challenger_diagnostics.metrics
+            )
+        )
         self.assertEqual(len(result.validation_diagnostics.calibration_bins), 10)
         self.assertGreaterEqual(len(result.validation_diagnostics.yearly_metrics), 1)
 

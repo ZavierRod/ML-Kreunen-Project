@@ -12,6 +12,12 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 
+from .challengers import (
+    CHALLENGER_VERSION,
+    DEFAULT_MAXIMUM_TRAINING_ROWS,
+    ChallengerDiagnostics,
+    evaluate_challengers,
+)
 from .evidence import (
     FactorRegime,
     HistoricalEvidence,
@@ -35,7 +41,7 @@ from .validation import (
     build_validation_diagnostics,
 )
 
-MODEL_VERSION = "elastic-net-panel-v2"
+MODEL_VERSION = "elastic-net-panel-v3"
 TARGET_VERSION = "calendar-excess-return-v1"
 TARGET_COLUMN = "excess_return_next_month"
 MONTH_COLUMN = "month_end"
@@ -53,6 +59,7 @@ class ForecastRequest:
     calibration_months: int = 48
     minimum_training_months: int = 60
     maximum_tuning_rows: int = 150_000
+    maximum_challenger_rows: int = DEFAULT_MAXIMUM_TRAINING_ROWS
     similar_observations: int = 20
     target_clip_quantiles: tuple[float, float] = (0.001, 0.999)
     alpha_grid: tuple[float, ...] = (0.00001, 0.0001, 0.001)
@@ -71,6 +78,8 @@ class ForecastRequest:
             raise ValueError("tuning_months must be positive and calibration_months >= 4")
         if self.maximum_tuning_rows < 1:
             raise ValueError("maximum_tuning_rows must be positive")
+        if self.maximum_challenger_rows < 1:
+            raise ValueError("maximum_challenger_rows must be positive")
         if self.similar_observations < 1:
             raise ValueError("similar_observations must be positive")
         lower, upper = self.target_clip_quantiles
@@ -96,6 +105,7 @@ class FactorContribution:
 class ForecastResult:
     configuration_id: str
     model_version: str
+    challenger_version: str
     reliability_version: str
     validation_version: str
     feature_version: str
@@ -120,6 +130,7 @@ class ForecastResult:
     historical_evidence: HistoricalEvidence
     reliability: ReliabilityAssessment
     validation_diagnostics: ValidationDiagnostics
+    challenger_diagnostics: ChallengerDiagnostics
     model_parameters: dict[str, float]
     validation_metrics: dict[str, float | int]
     data_quality: dict[str, float | int | str]
@@ -359,12 +370,14 @@ def _configuration_id(
         "calibration_months": request.calibration_months,
         "minimum_training_months": request.minimum_training_months,
         "maximum_tuning_rows": request.maximum_tuning_rows,
+        "maximum_challenger_rows": request.maximum_challenger_rows,
         "similar_observations": request.similar_observations,
         "target_clip_quantiles": list(request.target_clip_quantiles),
         "alpha_grid": list(request.alpha_grid),
         "l1_ratio_grid": list(request.l1_ratio_grid),
         "feature_version": FEATURE_VERSION,
         "model_version": MODEL_VERSION,
+        "challenger_version": CHALLENGER_VERSION,
         "target_version": TARGET_VERSION,
         "reliability_version": RELIABILITY_VERSION,
         "validation_version": VALIDATION_VERSION,
@@ -528,6 +541,16 @@ def generate_forecast(
         target_column=TARGET_COLUMN,
         month_column=MONTH_COLUMN,
     )
+    challenger_diagnostics = evaluate_challengers(
+        training=pre_calibration,
+        validation=residual_eval,
+        selected_factors=selected,
+        target_column=TARGET_COLUMN,
+        production_predictions=residual_eval["_prediction"].to_numpy(
+            dtype=float
+        ),
+        maximum_training_rows=request.maximum_challenger_rows,
+    )
 
     y_all_raw = ranked_historical[TARGET_COLUMN].to_numpy(dtype=float)
     y_all, final_clip_bounds = _clip_target(
@@ -621,6 +644,7 @@ def generate_forecast(
             data_version,
         ),
         model_version=MODEL_VERSION,
+        challenger_version=CHALLENGER_VERSION,
         reliability_version=RELIABILITY_VERSION,
         validation_version=VALIDATION_VERSION,
         feature_version=FEATURE_VERSION,
@@ -645,6 +669,7 @@ def generate_forecast(
         historical_evidence=historical_evidence,
         reliability=reliability,
         validation_diagnostics=validation_diagnostics,
+        challenger_diagnostics=challenger_diagnostics,
         model_parameters=best,
         validation_metrics=metrics,
         data_quality={
