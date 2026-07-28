@@ -97,6 +97,9 @@ def resolve_monthly_panel_path(data_dir: str | Path | None = None) -> Path:
         )
 
     base = Path(configured).expanduser().resolve()
+    if base.is_file():
+        return base
+
     candidates = (
         base / MONTHLY_PANEL_FILENAME,
         base / "artifacts" / MONTHLY_PANEL_FILENAME,

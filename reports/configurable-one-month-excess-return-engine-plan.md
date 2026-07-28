@@ -18,10 +18,15 @@ Implementation status:
 - Training, latest inference, and unresolved-audit panels are separate outputs.
 - The existing `monthly_panel.parquet` is treated as a migration fixture because its
   legacy build dropped every security's final observed month; rebuilding from the
-  enriched daily panel is the next data milestone.
+  enriched daily panel is implemented in `excess_return_engine/monthly.py`.
 - The July 27 local validation build produced 731,107 training rows through October
   2025, 3,841 latest inference candidates, and 16,227 unresolved audit rows, with
   zero labels crossing a missing calendar month.
+- The retained-final-row rebuild processed 20,052,183 daily observations into
+  757,058 monthly rows for 9,724 securities through December 2025. It preserves all
+  747,334 legacy monthly rows, adds exactly one final observation per security, and
+  produces 740,106 calendar-safe training labels through November 2025 plus 3,935
+  December 2025 inference candidates.
 - Delisting-return and actual fundamental-availability-date audits remain open.
 
 ## 1. Feature Summary

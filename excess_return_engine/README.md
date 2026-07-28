@@ -10,12 +10,17 @@ Use the Python environment in which `requirements.txt` is installed:
 
 ```bash
 export WRDS_RESEARCH_DATA_DIR="/Users/zavierrodrigues/DatasetKreunenTest"
-python -m excess_return_engine.data
+python -m excess_return_engine.monthly \
+  --daily-path "$WRDS_RESEARCH_DATA_DIR/final_with_ev.parquet"
+
+python -m excess_return_engine.data \
+  --data-dir local_artifacts/excess_return_engine/monthly_panel_full.parquet
 ```
 
 By default, the command writes these ignored files under
 `local_artifacts/excess_return_engine/`:
 
+- `monthly_panel_full.parquet`
 - `benchmark_returns.parquet`
 - `training_panel.parquet`
 - `inference_panel.parquet`
@@ -41,11 +46,10 @@ outcomes remain in `unresolved_labels.parquet` for audit instead of being silent
 dropped. The latest unresolved cross-section is also written as the inference
 panel.
 
-The existing `monthly_panel.parquet` previously dropped each security's final
-observed month when it created `y_next`. Its latest cross-section is therefore a
-migration fixture, not yet a production inference panel. The next data milestone is
-to rebuild the monthly panel from `final_with_ev.parquet` while retaining every
-month, including the latest unlabeled row and final observations around delistings.
+The new monthly builder reads `final_with_ev.parquet` one row group at a time and
+retains every observed month, including each security's final unlabeled row. The
+older `monthly_panel.parquet` remains a migration fixture because its legacy
+`y_next` build dropped those final observations.
 
 This stage also does not resolve the outstanding CRSP delisting-return and
 fundamental-availability-date audits documented in the feature plan.

@@ -125,6 +125,7 @@ class DataPathTests(unittest.TestCase):
 
             self.assertEqual(resolve_monthly_panel_path(root), expected.resolve())
             self.assertEqual(resolve_monthly_panel_path(artifacts), expected.resolve())
+            self.assertEqual(resolve_monthly_panel_path(expected), expected.resolve())
 
 
 if __name__ == "__main__":
