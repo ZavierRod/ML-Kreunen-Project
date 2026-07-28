@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .model import ForecastResult
 
-EXPERIMENT_VERSION = "saved-experiment-v7"
+EXPERIMENT_VERSION = "saved-experiment-v8"
 SUPPORTED_EXPERIMENT_VERSIONS = {
     "saved-experiment-v1",
     "saved-experiment-v2",
@@ -18,6 +18,7 @@ SUPPORTED_EXPERIMENT_VERSIONS = {
     "saved-experiment-v4",
     "saved-experiment-v5",
     "saved-experiment-v6",
+    "saved-experiment-v7",
     EXPERIMENT_VERSION,
 }
 MAX_EXPERIMENT_NAME_LENGTH = 80
@@ -44,6 +45,9 @@ class SavedExperiment:
     replay_version: str | None
     target_month: str
     benchmark_id: str
+    benchmark_version: str | None
+    benchmark_label: str | None
+    benchmark_method: str | None
     selected_factors: tuple[str, ...]
     training_window_months: int | None
     interval_level: float
@@ -129,6 +133,9 @@ def save_experiment(
         replay_version=result.replay_version,
         target_month=result.target_month,
         benchmark_id=result.benchmark_id,
+        benchmark_version=result.benchmark_version,
+        benchmark_label=result.benchmark.label,
+        benchmark_method=result.benchmark.method,
         selected_factors=tuple(result.selected_factors),
         training_window_months=result.training_window_months,
         interval_level=float(result.interval_level),
@@ -222,6 +229,7 @@ def comparison_warnings(
         ("as_of_date", "as-of date"),
         ("target_month", "target month"),
         ("benchmark_id", "benchmark"),
+        ("benchmark_version", "benchmark-registry version"),
         ("training_window_months", "training window"),
         ("data_version", "data version"),
         ("model_version", "model version"),
@@ -262,6 +270,10 @@ def comparison_records(
                 "All available"
                 if item.training_window_months is None
                 else f"{item.training_window_months} months"
+            ),
+            "Benchmark": (
+                getattr(item, "benchmark_label", None)
+                or getattr(item, "benchmark_id", "Not recorded")
             ),
             "Expected excess return": item.expected_excess_return,
             "Expected-return delta vs first": (
@@ -379,6 +391,11 @@ def _experiment_from_dict(payload: dict[str, object]) -> SavedExperiment:
         replay_version=_optional_string(payload.get("replay_version")),
         target_month=str(payload["target_month"]),
         benchmark_id=str(payload["benchmark_id"]),
+        benchmark_version=_optional_string(
+            payload.get("benchmark_version")
+        ),
+        benchmark_label=_optional_string(payload.get("benchmark_label")),
+        benchmark_method=_optional_string(payload.get("benchmark_method")),
         selected_factors=tuple(str(item) for item in payload["selected_factors"]),
         training_window_months=(
             None

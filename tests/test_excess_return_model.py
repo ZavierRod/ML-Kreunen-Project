@@ -3,6 +3,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
+from excess_return_engine.benchmarks import EQUAL_WEIGHT_BENCHMARK_ID
 from excess_return_engine.evidence import (
     classify_factor_regimes,
     find_similar_conditions,
@@ -171,6 +172,11 @@ class ForecastTests(unittest.TestCase):
         self.assertEqual(result.reliability_version, RELIABILITY_VERSION)
         self.assertEqual(result.validation_version, VALIDATION_VERSION)
         self.assertEqual(result.challenger_version, CHALLENGER_VERSION)
+        self.assertEqual(result.benchmark_id, "test-benchmark")
+        self.assertEqual(
+            result.benchmark.label,
+            "Source benchmark · test-benchmark",
+        )
         self.assertEqual(len(result.challenger_diagnostics.metrics), 5)
         self.assertTrue(
             all(
@@ -182,6 +188,43 @@ class ForecastTests(unittest.TestCase):
         self.assertEqual(len(result.validation_diagnostics.calibration_bins), 10)
         self.assertGreaterEqual(len(result.validation_diagnostics.yearly_metrics), 1)
 
+    def test_forecast_relabels_target_for_selected_benchmark(self) -> None:
+        training, inference = synthetic_panels()
+        base_request = ForecastRequest(
+            permno=3,
+            selected_factors=("size", "momentum_12_1"),
+            tuning_months=6,
+            calibration_months=12,
+            minimum_training_months=48,
+            alpha_grid=(0.0001,),
+            l1_ratio_grid=(0.5,),
+        )
+        source = generate_forecast(training, inference, base_request)
+        equal_weight = generate_forecast(
+            training,
+            inference,
+            ForecastRequest(
+                permno=3,
+                selected_factors=("size", "momentum_12_1"),
+                benchmark_id=EQUAL_WEIGHT_BENCHMARK_ID,
+                tuning_months=6,
+                calibration_months=12,
+                minimum_training_months=48,
+                alpha_grid=(0.0001,),
+                l1_ratio_grid=(0.5,),
+            ),
+        )
+
+        self.assertEqual(
+            equal_weight.benchmark_id,
+            EQUAL_WEIGHT_BENCHMARK_ID,
+        )
+        self.assertNotEqual(
+            source.configuration_id,
+            equal_weight.configuration_id,
+        )
+        self.assertNotEqual(source.data_version, equal_weight.data_version)
+
     def test_forecast_requires_enough_history(self) -> None:
         training, inference = synthetic_panels()
         request = ForecastRequest(
@@ -191,6 +234,20 @@ class ForecastTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(ValueError, "historical months"):
+            generate_forecast(training, inference, request)
+
+    def test_forecast_rejects_missing_historical_labels(self) -> None:
+        training, inference = synthetic_panels()
+        training.loc[0, "excess_return_next_month"] = np.nan
+        request = ForecastRequest(
+            permno=3,
+            selected_factors=("size",),
+            tuning_months=6,
+            calibration_months=12,
+            minimum_training_months=48,
+        )
+
+        with self.assertRaisesRegex(ValueError, "missing excess-return"):
             generate_forecast(training, inference, request)
 
     def test_forecast_uses_requested_trailing_training_window(self) -> None:

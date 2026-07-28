@@ -185,6 +185,7 @@ def execute_forecast(
             "walk_forward_version": result.walk_forward_version,
             "lineage_version": result.lineage_version,
             "audit_version": result.audit_version,
+            "benchmark_version": result.benchmark_version,
             "replay_version": result.replay_version,
         },
         "walk_forward_predictions": {

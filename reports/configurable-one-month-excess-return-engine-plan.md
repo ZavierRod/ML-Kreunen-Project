@@ -189,6 +189,19 @@ Implementation status:
   items. Its 13-check record includes selected-factor source-date completeness
   and content SHA-256
   `e1253e9af37a55cd49de0bb90616a437b0033cbcec01de82db697aa20a55b0b7`.
+- Versioned benchmark selection is implemented in
+  `excess_return_engine/benchmarks.py`. Users can choose the source
+  lagged-cap-weighted covered-universe benchmark or a derived equal-weighted
+  covered-universe benchmark. The selection recomputes training labels,
+  validation and walk-forward outcomes, replay outcomes, run identity, saved
+  experiments, UI evidence, and LLM context.
+- Real 120-month GOOGL benchmark comparison produced distinct immutable runs.
+  Lagged-cap-weighted run `017194d198b3442b` forecast `-0.27%` expected excess
+  return with `47.29%` positive probability, while equal-weight run
+  `16a18a9fb5b7ea8f` forecast `-0.42%` with `45.73%` positive probability.
+  Both passed the panel audit with zero blockers. The Streamlit benchmark selector
+  loaded the cached equal-weight run without errors. Fresh recomputation verified
+  both immutable forecast records and their distinct walk-forward ledgers exactly.
 - Delisting-return and actual fundamental-availability-date audits remain open.
 
 ## 1. Feature Summary

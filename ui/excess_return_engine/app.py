@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from excess_return_engine.benchmarks import benchmark_options
 from excess_return_engine.experiments import (
     comparison_label,
     comparison_warnings,
@@ -522,10 +523,18 @@ inference_snapshot = build_as_of_snapshot(
     as_of,
 )
 target_month = pd.Timestamp(inference_snapshot["target_month"].max())
-benchmark_ids = (
+source_benchmark_ids = (
     inference_snapshot["benchmark_id"].dropna().astype(str).unique()
 )
-benchmark_id = benchmark_ids[0] if len(benchmark_ids) == 1 else "Multiple benchmarks"
+if len(source_benchmark_ids) != 1:
+    st.error("The inference snapshot must contain one source benchmark.")
+    st.stop()
+source_benchmark_id = source_benchmark_ids[0]
+benchmark_definitions = benchmark_options(source_benchmark_id)
+benchmark_lookup = {
+    definition.benchmark_id: definition
+    for definition in benchmark_definitions
+}
 
 options = company_options(inference_snapshot)
 option_lookup = dict(options)
@@ -598,6 +607,11 @@ with st.sidebar:
                         "The saved security is not available at its saved "
                         "as-of date."
                     )
+                elif saved.benchmark_id not in benchmark_lookup:
+                    st.error(
+                        "The saved benchmark is not available in the loaded "
+                        "research panels."
+                    )
                 elif (
                     saved.training_window_months is not None
                     and saved.training_window_months > saved_available_months
@@ -624,6 +638,18 @@ with st.sidebar:
         key="forecast_company",
     )
     permno = option_lookup[selected_company]
+    st.session_state.setdefault(
+        "forecast_benchmark",
+        source_benchmark_id,
+    )
+    if st.session_state["forecast_benchmark"] not in benchmark_lookup:
+        st.session_state["forecast_benchmark"] = source_benchmark_id
+    benchmark_id = st.selectbox(
+        "Benchmark",
+        options=list(benchmark_lookup),
+        key="forecast_benchmark",
+        format_func=lambda item: benchmark_lookup[item].label,
+    )
 
     st.session_state.setdefault("forecast_preset", "Balanced")
     preset = st.segmented_control(
@@ -682,7 +708,7 @@ with st.sidebar:
     st.divider()
     st.caption(f"As of {as_of.date().isoformat()}")
     st.caption(f"Target month {target_month.date().isoformat()}")
-    st.caption(f"Benchmark {benchmark_id}")
+    st.caption(benchmark_lookup[benchmark_id].method)
 
 applied_message = st.session_state.pop("applied_experiment_message", None)
 if applied_message:
@@ -740,6 +766,7 @@ if run_forecast:
     request = ForecastRequest(
         permno=permno,
         selected_factors=tuple(selected_factors),
+        benchmark_id=benchmark_id,
         as_of_date=as_of.date().isoformat(),
         interval_level=interval_level,
         training_window_months=training_window_months,
@@ -778,6 +805,7 @@ result_matches_configuration = (
     result is not None
     and result.permno == permno
     and result.selected_factors == tuple(selected_factors)
+    and result.benchmark_id == benchmark_id
     and result.as_of_date == as_of.date().isoformat()
     and result.snapshot_source
     == inference_snapshot.attrs["snapshot_source"]
@@ -830,11 +858,16 @@ snapshot_mode_label = (
     else "Latest snapshot"
 )
 st.caption(
-    f"Benchmark: {result.benchmark_id} · As of: {result.as_of_date} · "
+    f"Benchmark: {result.benchmark.label} ({result.benchmark_id}) · "
+    f"As of: {result.as_of_date} · "
     f"Target: {result.target_month} · Training: "
     f"{format_training_window(getattr(result, 'training_window_months', None))} · "
     f"Mode: {snapshot_mode_label} · "
     f"Run: {result.configuration_id}"
+)
+st.caption(
+    f"Benchmark method: {result.benchmark.method} "
+    f"Limitation: {result.benchmark.limitation}"
 )
 execution_metadata = st.session_state.get("forecast_execution_metadata")
 if (
@@ -859,6 +892,7 @@ if result.snapshot_source == "historical_replay":
         training_panel,
         result.permno,
         result.as_of_date,
+        result.benchmark_id,
     )
     if replay_outcome is not None:
         st.markdown("**Replay outcome · revealed after forecast generation**")
@@ -1257,6 +1291,7 @@ with data_tab:
         f"Walk forward: {result.walk_forward_version} · "
         f"Lineage: {result.lineage_version} · "
         f"Audit: {result.audit_version} · "
+        f"Benchmarks: {result.benchmark_version} · "
         f"Challengers: {result.challenger_version} · "
         f"Replay: {result.replay_version or 'not applicable'}"
     )

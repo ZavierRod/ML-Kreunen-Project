@@ -15,6 +15,11 @@ import numpy as np
 import pandas as pd
 
 from .audit import AUDIT_VERSION, PanelAudit, audit_forecast_panels
+from .benchmarks import (
+    BENCHMARK_VERSION,
+    BenchmarkSelection,
+    relabel_forecast_panels,
+)
 from .challengers import (
     CHALLENGER_VERSION,
     DEFAULT_MAXIMUM_TRAINING_ROWS,
@@ -57,7 +62,7 @@ from .walk_forward import (
     evaluate_walk_forward,
 )
 
-MODEL_VERSION = "elastic-net-panel-v8"
+MODEL_VERSION = "elastic-net-panel-v9"
 TARGET_VERSION = "calendar-excess-return-v1"
 TARGET_COLUMN = "excess_return_next_month"
 MONTH_COLUMN = "month_end"
@@ -68,6 +73,7 @@ SECURITY_COLUMN = "permno"
 class ForecastRequest:
     permno: int
     selected_factors: tuple[str, ...]
+    benchmark_id: str | None = None
     as_of_date: str | None = None
     interval_level: float = 0.80
     training_window_months: int | None = None
@@ -128,6 +134,7 @@ class ForecastResult:
     walk_forward_version: str
     lineage_version: str
     audit_version: str
+    benchmark_version: str
     feature_version: str
     target_version: str
     data_version: str
@@ -138,6 +145,7 @@ class ForecastResult:
     snapshot_source: str
     target_month: str
     benchmark_id: str
+    benchmark: BenchmarkSelection
     selected_factors: tuple[str, ...]
     training_window_months: int | None
     expected_excess_return: float
@@ -187,6 +195,7 @@ class _ForecastScope:
     as_of: pd.Timestamp
     snapshot_source: str
     benchmark_id: str
+    benchmark: BenchmarkSelection
     data_version: str
     panel_audit: PanelAudit
 
@@ -433,6 +442,7 @@ def _configuration_id(
         "walk_forward_version": WALK_FORWARD_VERSION,
         "lineage_version": LINEAGE_VERSION,
         "audit_version": AUDIT_VERSION,
+        "benchmark_version": BENCHMARK_VERSION,
         "runtime_versions": runtime_versions(),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
@@ -525,8 +535,11 @@ def _prepare_forecast_scope(
     selected: tuple[str, ...],
 ) -> _ForecastScope:
     _validate_model_panels(training_panel, inference_panel, selected)
-    training = training_panel.copy()
-    inference = inference_panel.copy()
+    training, inference, benchmark = relabel_forecast_panels(
+        training_panel,
+        inference_panel,
+        request.benchmark_id,
+    )
     snapshot_source = str(
         inference_panel.attrs.get("snapshot_source", "latest_inference")
     )
@@ -552,7 +565,12 @@ def _prepare_forecast_scope(
         )
     current = current_rows.iloc[0]
     historical = training[training[MONTH_COLUMN] < as_of].copy()
-    historical = historical.dropna(subset=[TARGET_COLUMN])
+    missing_historical_labels = int(historical[TARGET_COLUMN].isna().sum())
+    if missing_historical_labels:
+        raise ValueError(
+            "Historical training scope contains "
+            f"{missing_historical_labels} missing excess-return label(s)."
+        )
     if historical.empty:
         raise ValueError("No historical labels are available before the as-of date.")
 
@@ -606,6 +624,7 @@ def _prepare_forecast_scope(
         as_of=as_of,
         snapshot_source=snapshot_source,
         benchmark_id=current_benchmark,
+        benchmark=benchmark,
         data_version=_scope_data_version(
             historical,
             inference_cross_section,
@@ -879,6 +898,7 @@ def generate_forecast_computation(
         walk_forward_version=WALK_FORWARD_VERSION,
         lineage_version=LINEAGE_VERSION,
         audit_version=AUDIT_VERSION,
+        benchmark_version=BENCHMARK_VERSION,
         feature_version=FEATURE_VERSION,
         target_version=TARGET_VERSION,
         data_version=scope.data_version,
@@ -889,6 +909,7 @@ def generate_forecast_computation(
         snapshot_source=snapshot_source,
         target_month=pd.Timestamp(current["target_month"]).date().isoformat(),
         benchmark_id=scope.benchmark_id,
+        benchmark=scope.benchmark,
         selected_factors=selected,
         training_window_months=request.training_window_months,
         expected_excess_return=point_forecast,
@@ -960,6 +981,7 @@ def main() -> None:
     )
     parser.add_argument("--permno", type=int, required=True)
     parser.add_argument("--factors", nargs="+", required=True)
+    parser.add_argument("--benchmark-id")
     parser.add_argument(
         "--training-panel",
         default="local_artifacts/excess_return_engine/training_panel.parquet",
@@ -983,6 +1005,7 @@ def main() -> None:
     request = ForecastRequest(
         permno=args.permno,
         selected_factors=tuple(args.factors),
+        benchmark_id=args.benchmark_id,
         as_of_date=args.as_of_date,
         interval_level=args.interval_level,
         training_window_months=args.training_window_months,

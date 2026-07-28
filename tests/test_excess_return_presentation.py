@@ -40,6 +40,7 @@ class PresentationTests(unittest.TestCase):
             training_window_months=120,
             name="Historical replay",
             configuration_id="abc123",
+            benchmark_id="benchmark",
         )
 
         queue_saved_configuration(state, saved, "GOOGL · Alphabet")
@@ -48,6 +49,7 @@ class PresentationTests(unittest.TestCase):
         self.assertTrue(apply_pending_saved_configuration(state))
         self.assertEqual(state["forecast_as_of"], "2024-12-31")
         self.assertEqual(state["forecast_training_window"], 120)
+        self.assertEqual(state["forecast_benchmark"], "benchmark")
         self.assertEqual(
             state["forecast_factors"],
             ["size", "momentum_12_1"],

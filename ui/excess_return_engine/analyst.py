@@ -246,6 +246,24 @@ def build_forecast_context(
             "replay_version": getattr(result, "replay_version", None),
             "target_month": result.target_month,
             "benchmark_id": result.benchmark_id,
+            "benchmark": {
+                "version": getattr(result, "benchmark_version", None),
+                "label": getattr(
+                    getattr(result, "benchmark", None),
+                    "label",
+                    result.benchmark_id,
+                ),
+                "method": getattr(
+                    getattr(result, "benchmark", None),
+                    "method",
+                    "Not recorded.",
+                ),
+                "limitation": getattr(
+                    getattr(result, "benchmark", None),
+                    "limitation",
+                    "Not recorded.",
+                ),
+            },
             "selected_factors": list(result.selected_factors),
             "training_window_months": getattr(
                 result,
@@ -501,6 +519,7 @@ def build_forecast_context(
             "realized_benchmark_return": float(
                 getattr(replay_outcome, "realized_benchmark_return")
             ),
+            "benchmark_id": getattr(replay_outcome, "benchmark_id"),
         }
     return context
 

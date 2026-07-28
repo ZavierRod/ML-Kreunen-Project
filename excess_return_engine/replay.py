@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 from pandas.tseries.offsets import MonthEnd
 
+from .benchmarks import relabel_training_panel
+
 REPLAY_VERSION = "historical-replay-v1"
 MONTH_COLUMN = "month_end"
 SECURITY_COLUMN = "permno"
@@ -29,6 +31,7 @@ class ReplayOutcome:
     realized_excess_return: float
     realized_stock_return: float
     realized_benchmark_return: float
+    benchmark_id: str
 
 
 def available_as_of_dates(
@@ -132,6 +135,7 @@ def realized_replay_outcome(
     training: pd.DataFrame,
     permno: int,
     as_of_date: str | pd.Timestamp,
+    benchmark_id: str | None = None,
 ) -> ReplayOutcome | None:
     """Return the held-back realized outcome for post-forecast evaluation."""
     _require_columns(
@@ -146,10 +150,14 @@ def realized_replay_outcome(
         },
         "training",
     )
+    relabeled, selection = relabel_training_panel(
+        training,
+        benchmark_id,
+    )
     as_of = _month_end(as_of_date)
-    months = _normalize_months(training[MONTH_COLUMN])
-    row = training.loc[
-        (training[SECURITY_COLUMN] == permno) & (months == as_of)
+    months = _normalize_months(relabeled[MONTH_COLUMN])
+    row = relabeled.loc[
+        (relabeled[SECURITY_COLUMN] == permno) & (months == as_of)
     ]
     if len(row) != 1 or pd.isna(row.iloc[0][TARGET_COLUMN]):
         return None
@@ -161,6 +169,7 @@ def realized_replay_outcome(
         realized_excess_return=float(item[TARGET_COLUMN]),
         realized_stock_return=float(item["stock_return_next_month"]),
         realized_benchmark_return=float(item["benchmark_return"]),
+        benchmark_id=selection.benchmark_id,
     )
 
 

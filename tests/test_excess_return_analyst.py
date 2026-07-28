@@ -17,6 +17,12 @@ def forecast_result() -> SimpleNamespace:
         as_of_date="2025-12-31",
         target_month="2026-01-31",
         benchmark_id="test-benchmark",
+        benchmark_version="benchmark-v1",
+        benchmark=SimpleNamespace(
+            label="Research benchmark",
+            method="Research method",
+            limitation="Research limitation",
+        ),
         selected_factors=("size",),
         model_version="model-v1",
         feature_version="feature-v1",
@@ -214,6 +220,10 @@ class ForecastAnalystTests(unittest.TestCase):
             context["challenger_diagnostics"]["forecast_source"],
             "elastic_net",
         )
+        self.assertEqual(
+            context["forecast_run"]["benchmark"]["label"],
+            "Research benchmark",
+        )
 
     def test_context_can_include_analog_rows_explicitly(self) -> None:
         context = analyst.build_forecast_context(
@@ -303,6 +313,7 @@ class ForecastAnalystTests(unittest.TestCase):
                 realized_excess_return=0.03,
                 realized_stock_return=0.04,
                 realized_benchmark_return=0.01,
+                benchmark_id="test-benchmark",
             ),
         )
 

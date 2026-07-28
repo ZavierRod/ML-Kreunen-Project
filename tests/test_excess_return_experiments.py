@@ -30,6 +30,11 @@ def forecast_result(
         replay_version=None,
         target_month="2026-01-31",
         benchmark_id="benchmark",
+        benchmark_version="benchmark-v1",
+        benchmark=SimpleNamespace(
+            label="Research benchmark",
+            method="Research method",
+        ),
         selected_factors=factors,
         training_window_months=None,
         interval_level=0.8,
@@ -162,6 +167,10 @@ class ExperimentTests(unittest.TestCase):
                 "Review required",
             )
             self.assertEqual(
+                comparison[0]["Benchmark"],
+                "Research benchmark",
+            )
+            self.assertEqual(
                 comparison[0]["Expected-return delta vs first"],
                 0.0,
             )
@@ -205,6 +214,9 @@ class ExperimentTests(unittest.TestCase):
             payload.pop("panel_audit_status")
             payload.pop("audit_blocking_issue_count")
             payload.pop("audit_review_issue_count")
+            payload.pop("benchmark_version")
+            payload.pop("benchmark_label")
+            payload.pop("benchmark_method")
             Path(path).write_text(json.dumps(payload), encoding="utf-8")
 
             listed = list_experiments(directory)

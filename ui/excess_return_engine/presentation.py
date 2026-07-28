@@ -69,6 +69,7 @@ def queue_saved_configuration(
     state[PENDING_CONFIGURATION_KEY] = {
         "forecast_as_of": saved.as_of_date,
         "forecast_company": company_label,
+        "forecast_benchmark": saved.benchmark_id,
         "forecast_factors": list(saved.selected_factors),
         "forecast_interval": saved.interval_level,
         "forecast_training_window": (

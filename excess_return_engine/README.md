@@ -28,9 +28,11 @@ By default, the command writes these ignored files under
 - `unresolved_labels.parquet`
 - `panel_audit.json`
 
-The initial research benchmark is the covered universe's monthly return, weighted
-by each security's prior-calendar-month market capitalization. Replace this with a
-licensed CRSP index return when that series is available.
+The default research benchmark is the covered universe's monthly return, weighted
+by each security's prior-calendar-month market capitalization. The configurable
+runner also supports an equal-weighted covered-universe research benchmark. Replace
+or supplement these derived benchmarks with licensed index returns when those
+series are available.
 
 ## Label contract
 
@@ -105,6 +107,38 @@ and 48-month calibration/evaluation splits. The default remains all eligible
 history. The requested window is part of the configuration ID and model record, so
 otherwise identical 10-year and expanding-history forecasts are separate runs.
 
+## Benchmark selection
+
+`excess_return_engine/benchmarks.py` provides a versioned benchmark registry. The
+current research choices are:
+
+- `wrds-universe-lagged-vw`: the source panel's exact-prior-month
+  market-cap-weighted covered-universe return
+- `wrds-universe-equal-weight`: the arithmetic mean of eligible covered-security
+  returns for each realized target month
+
+Select the alternative from Streamlit or the CLI:
+
+```bash
+python -m excess_return_engine.model \
+  --permno 90319 \
+  --factors momentum_12_1 volatility_21d asset_growth leverage \
+  --benchmark-id wrds-universe-equal-weight \
+  --training-window-months 120
+```
+
+Benchmark selection recomputes every historical excess-return label before tuning,
+calibration, validation, walk-forward evaluation, challenger comparison, and final
+fitting. Historical replay outcomes are relabeled against the same benchmark.
+Inference outcomes remain blank. The benchmark ID, registry version, method,
+limitation, relabeled data fingerprint, and selected benchmark are persisted in
+the immutable forecast record and saved experiment.
+
+Both choices are research benchmarks derived from the covered panel, not official
+index series. The equal-weight variant uses securities represented in the labeled
+panel, so unresolved or newly listed rows may be absent. This limitation is shown
+in the UI and analyst context.
+
 ## Immutable run cache
 
 `excess_return_engine/runs.py` stores each completed forecast as a versioned,
@@ -123,6 +157,7 @@ model again. Every artifact records:
 - Complete request and selected hyperparameter search space
 - Python, numpy, pandas, and scikit-learn versions
 - Data-content fingerprint and all engine service versions
+- Selected benchmark definition and benchmark-registry version
 - Forecast, coefficients, normalized inputs, contributions, uncertainty,
   reliability, validation, challenger, regime, analog evidence, and per-factor
   source lineage
@@ -312,7 +347,8 @@ python -m streamlit run ui/excess_return_engine/app.py
 
 Set `EXCESS_RETURN_ARTIFACT_DIR` to use a different local panel directory. The UI
 supports permanent-security company selection, factor presets and custom factor
-sets, current and historical as-of selection, configurable prediction intervals,
+sets, benchmark selection, current and historical as-of selection, configurable
+prediction intervals,
 pre-run data-quality gates, contribution attribution, current factor regimes,
 historical analog outcomes, validation metrics, version metadata, saved experiment
 comparison, immutable run caching and verification, and JSON export.
@@ -329,6 +365,7 @@ restore and compare a run:
 
 - Permanent security ID, display ticker, company name, and as-of date
 - Selected factor IDs, training window, interval level, target, and benchmark
+  definition
 - Expected excess return, positive-return probability, interval, and quality scores
 - Factor contributions, challenger summary, and model, feature, target, and data
   version IDs

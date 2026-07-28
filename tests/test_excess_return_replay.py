@@ -3,6 +3,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
+from excess_return_engine.benchmarks import EQUAL_WEIGHT_BENCHMARK_ID
 from excess_return_engine.replay import (
     REPLAY_VERSION,
     available_as_of_dates,
@@ -97,6 +98,24 @@ class HistoricalReplayTests(unittest.TestCase):
         self.assertIsNotNone(outcome)
         self.assertEqual(outcome.target_month, "2020-04-30")
         self.assertAlmostEqual(outcome.realized_excess_return, 0.03)
+        self.assertEqual(outcome.benchmark_id, "benchmark")
+
+    def test_replay_outcome_uses_selected_benchmark(self) -> None:
+        training, _ = replay_frames()
+
+        outcome = realized_replay_outcome(
+            training,
+            2,
+            "2020-03-31",
+            EQUAL_WEIGHT_BENCHMARK_ID,
+        )
+
+        self.assertEqual(
+            outcome.benchmark_id,
+            EQUAL_WEIGHT_BENCHMARK_ID,
+        )
+        self.assertAlmostEqual(outcome.realized_benchmark_return, 0.03)
+        self.assertAlmostEqual(outcome.realized_excess_return, 0.01)
 
 
 if __name__ == "__main__":
