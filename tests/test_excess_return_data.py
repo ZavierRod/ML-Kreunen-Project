@@ -106,6 +106,7 @@ class LabelTests(unittest.TestCase):
         self.assertEqual(result.inference.iloc[0]["month_end"], pd.Timestamp("2024-04-30"))
         self.assertEqual(result.inference.iloc[0]["target_month"], pd.Timestamp("2024-05-31"))
         self.assertEqual(result.inference.iloc[0]["label_status"], "missing_stock_return")
+        self.assertEqual(result.inference.iloc[0]["benchmark_id"], "test-index")
 
     def test_duplicate_security_months_are_rejected(self) -> None:
         duplicate = pd.concat([self.stock, self.stock.iloc[[0]]], ignore_index=True)

@@ -238,6 +238,7 @@ def build_excess_return_panels(
         how="left",
         validate="many_to_one",
     )
+    labeled["benchmark_id"] = labeled["benchmark_id"].fillna(str(benchmark_ids[0]))
 
     stock_available = labeled["stock_return_next_month"].notna()
     benchmark_available = labeled["benchmark_return"].notna()
@@ -276,12 +277,16 @@ def build_local_research_artifacts(
     output_dir: str | Path,
 ) -> ExcessReturnPanels:
     """Build local Parquet artifacts that are excluded from version control."""
+    from .features import build_factor_panel
+
     stock = load_wrds_monthly_panel(data_dir)
+    stock = build_factor_panel(stock)
     benchmark = build_lagged_value_weighted_benchmark(stock)
     panels = build_excess_return_panels(stock, benchmark)
 
     destination = Path(output_dir).expanduser().resolve()
     destination.mkdir(parents=True, exist_ok=True)
+    stock.to_parquet(destination / "feature_panel.parquet", index=False)
     benchmark.to_parquet(destination / "benchmark_returns.parquet", index=False)
     panels.training.to_parquet(destination / "training_panel.parquet", index=False)
     panels.inference.to_parquet(destination / "inference_panel.parquet", index=False)

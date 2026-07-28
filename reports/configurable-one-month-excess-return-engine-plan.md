@@ -27,6 +27,20 @@ Implementation status:
   747,334 legacy monthly rows, adds exactly one final observation per security, and
   produces 740,106 calendar-safe training labels through November 2025 plus 3,935
   December 2025 inference candidates.
+- A 14-factor registry and full-universe monthly rank normalization are implemented
+  in `excess_return_engine/features.py`. Calendar-lagged momentum cannot cross a
+  missing month, unavailable fundamentals are masked, and the old `idio_vol` proxy
+  is correctly labeled `relative_volatility`.
+- The first configurable Elastic Net runner is implemented in
+  `excess_return_engine/model.py`. It uses chronological tuning and calibration
+  windows, empirical positive-return probability and 80% prediction intervals,
+  reconcilable linear contributions, versioned configuration IDs, and local
+  forecast-run storage.
+- A December 2025 GOOGL research run using eight selected factors completed against
+  all 740,106 training rows in approximately two seconds. Its final 12-month
+  holdout produced 78.7% interval coverage for the requested 80% interval and
+  0.23% out-of-sample R-squared versus zero, reinforcing that outputs must display
+  measured uncertainty and modest predictive strength.
 - Delisting-return and actual fundamental-availability-date audits remain open.
 
 ## 1. Feature Summary
