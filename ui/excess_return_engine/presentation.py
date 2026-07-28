@@ -91,6 +91,7 @@ def apply_pending_saved_configuration(
         return False
     state.update(pending)
     state.pop("excess_return_result", None)
+    state.pop("forecast_execution_metadata", None)
     return True
 
 

@@ -104,6 +104,45 @@ and 48-month calibration/evaluation splits. The default remains all eligible
 history. The requested window is part of the configuration ID and model record, so
 otherwise identical 10-year and expanding-history forecasts are separate runs.
 
+## Immutable run cache
+
+`excess_return_engine/runs.py` stores each completed forecast as a versioned,
+ignored local artifact keyed by its immutable configuration ID. The key includes
+the request, selected factors, benchmark, as-of mode, model/service versions,
+numerical runtime versions, and a content fingerprint over the relevant training
+and inference scope. The fingerprint covers every available registered factor and
+rank, so factor-subset experiments on the same scope retain one comparable data
+version. A corrected outcome, factor value, company identifier, or runtime version
+creates a different run ID even when row counts and dates are unchanged.
+
+An identical request loads the complete nested forecast record without fitting the
+model again. Every artifact records:
+
+- UTC creation time and `FORECAST_RUN_ACTOR` (or `local-research-user`)
+- Complete request and selected hyperparameter search space
+- Python, numpy, pandas, and scikit-learn versions
+- Data-content fingerprint and all engine service versions
+- Forecast, coefficients, normalized inputs, contributions, uncertainty,
+  reliability, validation, challenger, regime, and analog evidence
+
+Writes are atomic. A corrupt or obsolete artifact is recomputed and repaired. The
+UI's **Recompute cached run** toggle verifies an existing immutable artifact; it
+does not overwrite it. If recomputation differs under the same configuration ID,
+the engine raises an error and preserves the original. Numerical verification uses
+`1e-10` relative and `1e-12` absolute tolerances for platform-level floating-point
+noise. Every successful generation, cache hit, and verification also appends an
+actor-stamped event to the ignored `forecast_run_events.jsonl` audit log.
+
+Use `--force-refresh` with the CLI to perform the same deterministic verification:
+
+```bash
+python -m excess_return_engine.model \
+  --permno 90319 \
+  --factors momentum_12_1 volatility_21d asset_growth leverage \
+  --training-window-months 120 \
+  --force-refresh
+```
+
 The command prints and saves:
 
 - Expected one-month excess return
@@ -193,7 +232,7 @@ supports permanent-security company selection, factor presets and custom factor
 sets, current and historical as-of selection, configurable prediction intervals,
 pre-run data-quality gates, contribution attribution, current factor regimes,
 historical analog outcomes, validation metrics, version metadata, saved experiment
-comparison, and JSON export.
+comparison, immutable run caching and verification, and JSON export.
 
 This research UI is intentionally separate from the public Streamlit deployment.
 The licensed WRDS-derived panels remain local and must not be committed to Git or

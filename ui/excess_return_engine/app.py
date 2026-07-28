@@ -26,16 +26,13 @@ from excess_return_engine.experiments import (
     save_experiment,
 )
 from excess_return_engine.features import FACTOR_IDS, FACTOR_REGISTRY
-from excess_return_engine.model import (
-    ForecastRequest,
-    generate_forecast,
-    save_forecast_result,
-)
+from excess_return_engine.model import ForecastRequest
 from excess_return_engine.replay import (
     available_as_of_dates,
     build_as_of_snapshot,
     realized_replay_outcome,
 )
+from excess_return_engine.runs import RUN_ARTIFACT_VERSION, execute_forecast
 from ui.excess_return_engine import analyst
 from ui.excess_return_engine.presentation import (
     FACTOR_PRESETS,
@@ -668,6 +665,11 @@ with st.sidebar:
         if selected_training_window == ALL_HISTORY_OPTION
         else int(selected_training_window)
     )
+    force_refresh = st.toggle(
+        "Recompute cached run",
+        value=False,
+        key="forecast_force_refresh",
+    )
 
     st.divider()
     st.caption(f"As of {as_of.date().isoformat()}")
@@ -724,18 +726,25 @@ if run_forecast:
         interval_level=interval_level,
         training_window_months=training_window_months,
     )
-    with st.spinner("Fitting selected-factor model and calibrating uncertainty..."):
+    with st.spinner("Loading or fitting the selected-factor forecast..."):
         try:
-            generated_result = generate_forecast(
+            execution = execute_forecast(
                 training_panel,
                 inference_snapshot,
                 request,
-            )
-            save_forecast_result(
-                generated_result,
                 ARTIFACT_DIR / "forecast_runs",
+                force_refresh=force_refresh,
             )
-            st.session_state["excess_return_result"] = generated_result
+            st.session_state["excess_return_result"] = execution.result
+            st.session_state["forecast_execution_metadata"] = {
+                "configuration_id": execution.result.configuration_id,
+                "cache_status": execution.cache_status,
+                "cache_reason": execution.cache_reason,
+                "created_at_utc": execution.created_at_utc,
+                "actor": execution.actor,
+                "created_by": execution.created_by,
+                "runtime_versions": execution.runtime_versions,
+            }
             st.session_state.pop("excess_return_error", None)
         except Exception as exc:
             st.session_state["excess_return_error"] = str(exc)
@@ -794,15 +803,35 @@ headline[3].metric(
     ),
 )
 
+snapshot_mode_label = (
+    "Historical replay"
+    if result.snapshot_source == "historical_replay"
+    else "Latest snapshot"
+)
 st.caption(
     f"Benchmark: {result.benchmark_id} · As of: {result.as_of_date} · "
     f"Target: {result.target_month} · Training: "
     f"{format_training_window(getattr(result, 'training_window_months', None))} · "
-    f"Mode: "
-    f"{'Historical replay' if result.snapshot_source == 'historical_replay' else 'Latest snapshot'} "
-    f"· "
+    f"Mode: {snapshot_mode_label} · "
     f"Run: {result.configuration_id}"
 )
+execution_metadata = st.session_state.get("forecast_execution_metadata")
+if (
+    isinstance(execution_metadata, dict)
+    and execution_metadata.get("configuration_id") == result.configuration_id
+):
+    source_label = {
+        "cached": "Cached immutable artifact",
+        "generated": "New immutable artifact",
+        "verified": "Recomputed and verified",
+        "repaired": "Repaired invalid artifact",
+    }.get(execution_metadata["cache_status"], "Immutable artifact")
+    st.caption(
+        f"Run source: {source_label} · Created: "
+        f"{execution_metadata['created_at_utc']} · "
+        f"Created by: {execution_metadata['created_by']} · "
+        f"Accessed by: {execution_metadata['actor']}"
+    )
 replay_outcome = None
 if result.snapshot_source == "historical_replay":
     replay_outcome = realized_replay_outcome(
@@ -1099,6 +1128,21 @@ with data_tab:
         f"Challengers: {result.challenger_version} · "
         f"Replay: {result.replay_version or 'not applicable'}"
     )
+    st.caption(
+        f"Run artifact: {RUN_ARTIFACT_VERSION} · "
+        f"Content fingerprint: {result.data_version.rsplit('_sha256-', 1)[-1]}"
+    )
+    if (
+        isinstance(execution_metadata, dict)
+        and execution_metadata.get("configuration_id")
+        == result.configuration_id
+    ):
+        versions = execution_metadata["runtime_versions"]
+        st.caption(
+            f"Runtime: Python {versions['python']} · "
+            f"numpy {versions['numpy']} · pandas {versions['pandas']} · "
+            f"scikit-learn {versions['scikit-learn']}"
+        )
 
 render_experiment_workspace(result)
 render_forecast_analyst(result, replay_outcome=replay_outcome)

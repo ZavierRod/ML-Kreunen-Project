@@ -28,6 +28,7 @@ class PresentationTests(unittest.TestCase):
         state = {
             "forecast_as_of": "2025-12-31",
             "excess_return_result": object(),
+            "forecast_execution_metadata": {"cache_status": "cached"},
         }
         saved = SimpleNamespace(
             as_of_date="2024-12-31",
@@ -49,6 +50,7 @@ class PresentationTests(unittest.TestCase):
             ["size", "momentum_12_1"],
         )
         self.assertNotIn("excess_return_result", state)
+        self.assertNotIn("forecast_execution_metadata", state)
         self.assertFalse(apply_pending_saved_configuration(state))
 
     def test_company_options_use_permanent_identifier(self) -> None:

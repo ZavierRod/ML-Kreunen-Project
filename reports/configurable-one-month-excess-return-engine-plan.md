@@ -126,6 +126,19 @@ Implementation status:
   with every outcome field hidden. Run `5b39593247c92361` forecast `-0.61%` excess
   return for January 2025 versus a subsequently revealed `+4.41%`, a forecast error
   of `-5.03%`; this miss remains visible rather than being optimized away.
+- Content-aware immutable run caching is implemented in
+  `excess_return_engine/runs.py`. Configuration IDs now include a fingerprint over
+  every available registered factor, rank, outcome, benchmark, security, and
+  display value in the research scope plus Python, numpy, pandas, and scikit-learn
+  versions.
+- Versioned run artifacts persist the full request, actor, UTC creation time,
+  coefficients, hyperparameters, forecast evidence, diagnostics, and source/service
+  versions. Writes are atomic; stale or corrupt files are repaired, while a
+  recomputation mismatch preserves the original and fails loudly. Successful
+  generations, cache hits, and verification runs append actor-stamped audit events.
+- On the real 120-month GOOGL configuration, run `22767630d60a2ae6` took `3.46`
+  seconds to generate and `0.97` seconds to load from cache. The cached nested
+  forecast record matched the generated result exactly.
 - Delisting-return and actual fundamental-availability-date audits remain open.
 
 ## 1. Feature Summary

@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import platform
 from dataclasses import asdict, dataclass
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Iterable
 
@@ -25,6 +27,7 @@ from .evidence import (
     find_similar_conditions,
 )
 from .features import (
+    FACTOR_IDS,
     FEATURE_VERSION,
     rank_normalize_factors,
     ranked_factor_column,
@@ -42,7 +45,7 @@ from .validation import (
     build_validation_diagnostics,
 )
 
-MODEL_VERSION = "elastic-net-panel-v4"
+MODEL_VERSION = "elastic-net-panel-v5"
 TARGET_VERSION = "calendar-excess-return-v1"
 TARGET_COLUMN = "excess_return_next_month"
 MONTH_COLUMN = "month_end"
@@ -150,6 +153,17 @@ class ForecastResult:
         ]
         result["historical_evidence"] = asdict(self.historical_evidence)
         return result
+
+
+@dataclass(frozen=True)
+class _ForecastScope:
+    inference: pd.DataFrame
+    historical: pd.DataFrame
+    current: pd.Series
+    as_of: pd.Timestamp
+    snapshot_source: str
+    benchmark_id: str
+    data_version: str
 
 
 def _load_elastic_net():
@@ -391,20 +405,81 @@ def _configuration_id(
         "target_version": TARGET_VERSION,
         "reliability_version": RELIABILITY_VERSION,
         "validation_version": VALIDATION_VERSION,
+        "runtime_versions": runtime_versions(),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()[:16]
 
 
-def generate_forecast(
+def runtime_versions() -> dict[str, str]:
+    """Return numerical runtime versions that can affect fitted outputs."""
+    packages = {}
+    for package in ("numpy", "pandas", "scikit-learn"):
+        try:
+            packages[package] = version(package)
+        except PackageNotFoundError:  # pragma: no cover - dependency failure.
+            packages[package] = "not-installed"
+    return {
+        "python": platform.python_version(),
+        **packages,
+    }
+
+
+def _frame_content_digest(
+    frame: pd.DataFrame,
+    columns: tuple[str, ...],
+) -> bytes:
+    available = tuple(column for column in columns if column in frame.columns)
+    hashed = pd.util.hash_pandas_object(
+        frame[list(available)],
+        index=False,
+        categorize=True,
+    )
+    return hashed.to_numpy(dtype=np.uint64, copy=False).tobytes()
+
+
+def _scope_data_version(
+    historical: pd.DataFrame,
+    inference_cross_section: pd.DataFrame,
+) -> str:
+    rank_columns = tuple(
+        ranked_factor_column(factor) for factor in FACTOR_IDS
+    )
+    used_rank_columns = (
+        rank_columns
+        if set(rank_columns).issubset(historical.columns)
+        and set(rank_columns).issubset(inference_cross_section.columns)
+        else ()
+    )
+    columns = (
+        SECURITY_COLUMN,
+        MONTH_COLUMN,
+        "target_month",
+        "benchmark_id",
+        "ticker",
+        "company",
+        TARGET_COLUMN,
+        *FACTOR_IDS,
+        *used_rank_columns,
+    )
+    digest = hashlib.sha256()
+    digest.update(_frame_content_digest(historical, columns))
+    digest.update(_frame_content_digest(inference_cross_section, columns))
+    training_start = historical[MONTH_COLUMN].min().date().isoformat()
+    training_end = historical[MONTH_COLUMN].max().date().isoformat()
+    return (
+        f"rows-{len(historical)}_months-{training_start}-to-{training_end}"
+        f"_sha256-{digest.hexdigest()[:16]}"
+    )
+
+
+def _prepare_forecast_scope(
     training_panel: pd.DataFrame,
     inference_panel: pd.DataFrame,
     request: ForecastRequest,
-) -> ForecastResult:
-    """Fit the selected-factor model and forecast one security's next month."""
-    selected = validate_factor_selection(request.selected_factors)
+    selected: tuple[str, ...],
+) -> _ForecastScope:
     _validate_model_panels(training_panel, inference_panel, selected)
-
     training = training_panel.copy()
     inference = inference_panel.copy()
     snapshot_source = str(
@@ -421,16 +496,16 @@ def generate_forecast(
         else inference[MONTH_COLUMN].max()
     )
 
-    current = inference[
+    current_rows = inference[
         (inference[SECURITY_COLUMN] == request.permno)
         & (inference[MONTH_COLUMN] == as_of)
     ]
-    if len(current) != 1:
+    if len(current_rows) != 1:
         raise ValueError(
             f"Expected one inference row for permno={request.permno} "
-            f"at {as_of.date()}, found {len(current)}."
+            f"at {as_of.date()}, found {len(current_rows)}."
         )
-    current = current.iloc[0]
+    current = current_rows.iloc[0]
     historical = training[training[MONTH_COLUMN] < as_of].copy()
     historical = historical.dropna(subset=[TARGET_COLUMN])
     if historical.empty:
@@ -465,6 +540,71 @@ def generate_forecast(
         historical = historical[
             historical[MONTH_COLUMN].isin(retained_months)
         ].copy()
+
+    benchmark_ids = historical["benchmark_id"].dropna().astype(str).unique()
+    current_benchmark = str(current["benchmark_id"])
+    if len(benchmark_ids) != 1 or benchmark_ids[0] != current_benchmark:
+        raise ValueError("Training and inference panels must use one matching benchmark.")
+    inference_cross_section = inference[inference[MONTH_COLUMN] == as_of]
+    return _ForecastScope(
+        inference=inference,
+        historical=historical,
+        current=current,
+        as_of=as_of,
+        snapshot_source=snapshot_source,
+        benchmark_id=current_benchmark,
+        data_version=_scope_data_version(
+            historical,
+            inference_cross_section,
+        ),
+    )
+
+
+def forecast_configuration_id(
+    training_panel: pd.DataFrame,
+    inference_panel: pd.DataFrame,
+    request: ForecastRequest,
+) -> str:
+    """Resolve the immutable cache key without fitting a model."""
+    selected = validate_factor_selection(request.selected_factors)
+    scope = _prepare_forecast_scope(
+        training_panel,
+        inference_panel,
+        request,
+        selected,
+    )
+    return _configuration_id(
+        request,
+        scope.as_of,
+        scope.benchmark_id,
+        scope.data_version,
+        scope.snapshot_source,
+    )
+
+
+def generate_forecast(
+    training_panel: pd.DataFrame,
+    inference_panel: pd.DataFrame,
+    request: ForecastRequest,
+) -> ForecastResult:
+    """Fit the selected-factor model and forecast one security's next month."""
+    selected = validate_factor_selection(request.selected_factors)
+    scope = _prepare_forecast_scope(
+        training_panel,
+        inference_panel,
+        request,
+        selected,
+    )
+    inference = scope.inference
+    historical = scope.historical
+    current = scope.current
+    as_of = scope.as_of
+    snapshot_source = scope.snapshot_source
+    required_months = (
+        request.minimum_training_months
+        + request.tuning_months
+        + request.calibration_months
+    )
 
     ranked_historical, ranked_current = _normalized_model_frames(
         historical,
@@ -614,10 +754,6 @@ def generate_forecast(
     if not np.isclose(reconciled, point_forecast, atol=1e-10):
         raise RuntimeError("Factor contributions do not reconcile to the forecast.")
 
-    benchmark_ids = historical["benchmark_id"].dropna().astype(str).unique()
-    current_benchmark = str(current["benchmark_id"])
-    if len(benchmark_ids) != 1 or benchmark_ids[0] != current_benchmark:
-        raise ValueError("Training and inference panels must use one matching benchmark.")
     raw_current = inference[
         (inference[SECURITY_COLUMN] == request.permno)
         & (inference[MONTH_COLUMN] == as_of)
@@ -627,11 +763,6 @@ def generate_forecast(
     )
     training_coverage = float(
         historical[list(selected)].notna().mean().mean()
-    )
-    training_start = historical[MONTH_COLUMN].min().date().isoformat()
-    training_end = historical[MONTH_COLUMN].max().date().isoformat()
-    data_version = (
-        f"rows-{len(historical)}_months-{training_start}-to-{training_end}"
     )
     point_in_time_status = "research_lag_proxy"
     reliability = assess_reliability(
@@ -655,8 +786,8 @@ def generate_forecast(
         configuration_id=_configuration_id(
             request,
             as_of,
-            current_benchmark,
-            data_version,
+            scope.benchmark_id,
+            scope.data_version,
             snapshot_source,
         ),
         model_version=MODEL_VERSION,
@@ -670,14 +801,14 @@ def generate_forecast(
         validation_version=VALIDATION_VERSION,
         feature_version=FEATURE_VERSION,
         target_version=TARGET_VERSION,
-        data_version=data_version,
+        data_version=scope.data_version,
         permno=int(request.permno),
         ticker=_optional_string(current.get("ticker")),
         company=_optional_string(current.get("company")),
         as_of_date=as_of.date().isoformat(),
         snapshot_source=snapshot_source,
         target_month=pd.Timestamp(current["target_month"]).date().isoformat(),
-        benchmark_id=current_benchmark,
+        benchmark_id=scope.benchmark_id,
         selected_factors=selected,
         training_window_months=request.training_window_months,
         expected_excess_return=point_forecast,
@@ -712,20 +843,6 @@ def _optional_string(value: object) -> str | None:
     return str(value)
 
 
-def save_forecast_result(
-    result: ForecastResult,
-    output_dir: str | Path,
-) -> Path:
-    destination = Path(output_dir).expanduser().resolve()
-    destination.mkdir(parents=True, exist_ok=True)
-    output_path = destination / f"{result.configuration_id}.json"
-    output_path.write_text(
-        json.dumps(result.to_dict(), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    return output_path
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run a configurable one-month excess-return research forecast."
@@ -747,6 +864,7 @@ def main() -> None:
     parser.add_argument("--as-of-date")
     parser.add_argument("--interval-level", type=float, default=0.80)
     parser.add_argument("--training-window-months", type=int)
+    parser.add_argument("--force-refresh", action="store_true")
     args = parser.parse_args()
 
     training = pd.read_parquet(Path(args.training_panel).expanduser().resolve())
@@ -758,10 +876,18 @@ def main() -> None:
         interval_level=args.interval_level,
         training_window_months=args.training_window_months,
     )
-    result = generate_forecast(training, inference, request)
-    output_path = save_forecast_result(result, args.output_dir)
-    print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
-    print(f"saved: {output_path}")
+    from .runs import execute_forecast
+
+    execution = execute_forecast(
+        training,
+        inference,
+        request,
+        args.output_dir,
+        force_refresh=args.force_refresh,
+    )
+    print(json.dumps(execution.result.to_dict(), indent=2, sort_keys=True))
+    print(f"run_source: {execution.cache_status}")
+    print(f"saved: {execution.artifact_path}")
 
 
 if __name__ == "__main__":
