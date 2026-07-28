@@ -6,6 +6,9 @@ __pycache__/
 venv/
 .env
 .streamlit/secrets.toml
+local_artifacts/
+*.parquet
+*.zip
 
 # Jupyter
 .ipynb_checkpoints/
